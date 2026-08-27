@@ -62,6 +62,12 @@ objects actually needed, so several GPU metrics due together cost one GPU update
 Unified (one interval for everything, default 30s) or per-metric intervals, 1–300s. Changes apply
 immediately with no restart, and the `Computer` instance is reused for the application's lifetime.
 
+An idle cadence backs polling off once the machine has had no keyboard or mouse input for a
+configurable period (default 5 minutes), following the same unified/individual mode — so choosing
+per-metric intervals gives a per-metric idle interval too. The loop still re-checks for input every
+5 seconds while idle, so returning to the machine refreshes everything within seconds rather than
+waiting out a long idle interval.
+
 ### History
 
 `%LOCALAPPDATA%\HardwareWidget\Data\hardware-history.db`, one row per (metric, timestamp):
@@ -86,6 +92,10 @@ A database failure logs a warning and never stops live monitoring.
 Borderless and resizable from any edge, draggable, Aero Snap disabled. Widening it reflows the rows
 into additional columns. Right-click for settings, text size, opacity, always-on-top and lock; the
 tray icon holds show/hide and exit.
+
+Each metric can be hidden, and rows can be dragged into any order — the widget follows the order set
+in Settings. Appearance and colour stages apply as you change them; the monitoring settings rebuild
+the polling schedule, so they wait for their own Save button.
 
 Two appearances, matching the sibling AI Usage Monitor app: **Retro** (embedded pixel font, aliased
 text, square corners, 1px border) and **Default** (system font, ClearType, rounded card), plus the

@@ -20,9 +20,16 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     /// equal intervals coalesce into one cycle instead of drifting into separate ones.</summary>
     private static readonly TimeSpan CoalesceTolerance = TimeSpan.FromMilliseconds(75);
 
+    /// <summary>
+    /// How often the loop re-checks for input while on the idle cadence. Without this cap a long
+    /// idle interval would also delay noticing that the user came back.
+    /// </summary>
+    private static readonly TimeSpan IdleStateCheckInterval = TimeSpan.FromSeconds(5);
+
     private readonly IHardwareMonitorService _monitor;
     private readonly HardwareHistoryRepository _history;
     private readonly SettingsService _settings;
+    private readonly ISystemIdleTimeProvider _idleTime;
     private readonly SemaphoreSlim _restartGate = new(1, 1);
 
     private CancellationTokenSource? _cancellation;
@@ -36,11 +43,13 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     public HardwareMonitorScheduler(
         IHardwareMonitorService monitor,
         HardwareHistoryRepository history,
-        SettingsService settings)
+        SettingsService settings,
+        ISystemIdleTimeProvider? idleTime = null)
     {
         _monitor = monitor;
         _history = history;
         _settings = settings;
+        _idleTime = idleTime ?? new SystemIdleTimeProvider();
     }
 
     /// <summary>Raised on a background thread after every cycle that sampled at least one metric.</summary>
@@ -77,12 +86,17 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
             _cancellation = new CancellationTokenSource();
             _loop = Task.Run(() => RunAsync(settings, _cancellation.Token));
 
-            AppLog.Info(settings.UseUnifiedPollingInterval
+            var idleSuffix = settings.UseIdlePolling
+                ? $" Idle after {settings.IdleAfterSeconds}s."
+                : " Idle polling off.";
+
+            AppLog.Info((settings.UseUnifiedPollingInterval
                 ? $"Scheduler started in unified mode at {settings.UnifiedPollingSeconds}s."
                 : "Scheduler started in individual mode: " + string.Join(
                     ", ",
                     HardwareMetricsExtensions.Individual.Select(
-                        metric => $"{metric}={settings.ResolveIntervalSeconds(metric)}s")));
+                        metric => $"{metric}={settings.ResolveIntervalSeconds(metric)}s")))
+                + idleSuffix);
         }
         finally
         {
@@ -150,11 +164,10 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     {
         // Every metric starts due, which gives the required immediate first read.
         var dueAt = HardwareMetricsExtensions.Individual.ToDictionary(metric => metric, _ => 0L);
-        var intervals = HardwareMetricsExtensions.Individual.ToDictionary(
-            metric => metric,
-            metric => (long)settings.ResolveIntervalSeconds(metric) * 1000L);
 
         var clock = Stopwatch.StartNew();
+        var idleThreshold = TimeSpan.FromSeconds(settings.IdleAfterSeconds);
+        var wasIdle = false;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -167,6 +180,28 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 foreach (var metric in HardwareMetricsExtensions.Individual)
                 {
                     dueAt[metric] = 0L;
+                }
+            }
+
+            // Intervals are resolved per cycle rather than once up front, because the idle
+            // interval can take over at any moment without the schedule being rebuilt.
+            var isIdle = settings.UseIdlePolling && _idleTime.GetIdleTime() >= idleThreshold;
+
+            if (isIdle != wasIdle)
+            {
+                wasIdle = isIdle;
+                AppLog.Info(isIdle
+                    ? $"Machine idle for {idleThreshold.TotalSeconds:0}s; switching to the idle polling cadence."
+                    : "Input resumed; returning to the active polling cadence.");
+
+                // Coming back from idle, refresh everything at once: the readings on screen are as
+                // stale as the idle interval, and the user is looking at them again.
+                if (!isIdle)
+                {
+                    foreach (var metric in HardwareMetricsExtensions.Individual)
+                    {
+                        dueAt[metric] = 0L;
+                    }
                 }
             }
 
@@ -193,13 +228,22 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 {
                     if (due.Includes(metric))
                     {
-                        dueAt[metric] = completedAt + intervals[metric];
+                        dueAt[metric] = completedAt
+                            + ((long)settings.ResolveIntervalSeconds(metric, isIdle) * 1000L);
                     }
                 }
             }
 
             var nextDueAt = dueAt.Values.Min();
             var delay = nextDueAt - clock.ElapsedMilliseconds;
+
+            // While idle, never sleep past the point where returning input should be noticed, so
+            // waking the machine does not wait out a long idle interval before refreshing.
+            if (isIdle && delay > IdleStateCheckInterval.TotalMilliseconds)
+            {
+                delay = (long)IdleStateCheckInterval.TotalMilliseconds;
+            }
+
             if (delay > 0)
             {
                 try

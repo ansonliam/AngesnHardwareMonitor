@@ -314,6 +314,93 @@
                               SelectedItem="{Binding GpuFanInterval}" Style="{StaticResource IntervalCombo}" />
                 </Grid>
 
+                <Separator Margin="0,14,0,12" />
+
+                <CheckBox Content="Poll more slowly when the computer is idle"
+                          IsChecked="{Binding UseIdlePolling}"
+                          Margin="0,0,0,8" />
+
+                <Grid Visibility="{Binding UseIdlePolling, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="Consider idle after" />
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding IdleAfterOptions}"
+                              SelectedItem="{Binding IdleAfter}"
+                              Style="{StaticResource IntervalCombo}" />
+                </Grid>
+
+                <!-- Idle follows the same unified/individual mode as active polling, so exactly one
+                     of these two blocks is ever visible. -->
+                <Grid Visibility="{Binding IdleUnifiedVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="Idle polling interval" />
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding IdleIntervalOptions}"
+                              SelectedItem="{Binding IdleUnifiedInterval}"
+                              Style="{StaticResource IntervalCombo}" />
+                </Grid>
+
+                <StackPanel Visibility="{Binding IdleIndividualVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Margin="0,6,0,4"
+                               Style="{StaticResource HintText}"
+                               Text="Idle interval per metric" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="CPU temperature" />
+                        <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleCpuTemperatureInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="CPU usage" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleCpuUsageInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel}" Text="RAM usage" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleMemoryUsageInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel}" Text="GPU temperature" />
+                        <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleGpuTemperatureInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel}" Text="GPU core usage" />
+                        <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleGpuComputeUsageInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Style="{StaticResource RowLabel}" Text="GPU memory usage" />
+                        <ComboBox Grid.Row="5" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleGpuMemoryUsageInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="6" Grid.Column="0" Style="{StaticResource RowLabel}" Text="VRAM temperature" />
+                        <ComboBox Grid.Row="6" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleGpuMemoryTemperatureInterval}" Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock Grid.Row="7" Grid.Column="0" Style="{StaticResource RowLabel}" Text="GPU fan" />
+                        <ComboBox Grid.Row="7" Grid.Column="1" ItemsSource="{Binding IdleIntervalOptions}"
+                                  SelectedItem="{Binding IdleGpuFanInterval}" Style="{StaticResource IntervalCombo}" />
+                    </Grid>
+                </StackPanel>
+
                 <StackPanel Margin="0,14,0,0" Orientation="Horizontal">
                     <Button Command="{Binding SaveMonitoringCommand}"
                             Content="Save monitoring settings"

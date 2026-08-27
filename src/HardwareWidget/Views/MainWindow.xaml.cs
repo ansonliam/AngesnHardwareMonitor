@@ -316,12 +316,12 @@ public partial class MainWindow : Window
 
             var workArea = SystemParameters.WorkArea;
 
-            // NaN means "never positioned"; park it near the top-right corner on first run.
-            var left = double.IsFinite(settings.WidgetLeft)
-                ? settings.WidgetLeft
+            // Null means "never positioned"; park it near the top-right corner on first run.
+            var left = settings.WidgetLeft is { } savedLeft && double.IsFinite(savedLeft)
+                ? savedLeft
                 : workArea.Right - Width - 24;
-            var top = double.IsFinite(settings.WidgetTop)
-                ? settings.WidgetTop
+            var top = settings.WidgetTop is { } savedTop && double.IsFinite(savedTop)
+                ? savedTop
                 : workArea.Top + 24;
 
             // Guard against a saved position on a monitor that is no longer attached.
@@ -353,8 +353,8 @@ public partial class MainWindow : Window
         }
 
         var settings = _settings.Current;
-        if (settings.WidgetLeft.Equals(Left)
-            && settings.WidgetTop.Equals(Top)
+        if (settings.WidgetLeft == Left
+            && settings.WidgetTop == Top
             && settings.WidgetWidth.Equals(Width)
             && settings.WidgetHeight.Equals(Height))
         {

@@ -98,5 +98,11 @@ public sealed class SettingsService
         {
             AppLog.Warn($"Settings could not be saved: {exception.Message}");
         }
+        catch (Exception exception)
+        {
+            // Deliberately broad: a serialisation fault is a bug to fix, not a reason to bring the
+            // widget down mid-session. It is logged loudly and the in-memory settings still apply.
+            AppLog.Error("Settings could not be serialised", exception);
+        }
     }
 }

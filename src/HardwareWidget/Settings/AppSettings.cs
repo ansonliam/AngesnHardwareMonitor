@@ -12,6 +12,16 @@ public sealed class AppSettings
     public const int DefaultPollingSeconds = 30;
     public const int MaximumPollingSeconds = 300;
 
+    // Idle polling gets a wider ceiling than active polling: the whole point is to back right off
+    // while nobody is looking, and an hour between samples is a reasonable thing to want.
+    public const int MinimumIdlePollingSeconds = 5;
+    public const int DefaultIdlePollingSeconds = 300;
+    public const int MaximumIdlePollingSeconds = 3600;
+
+    public const int MinimumIdleAfterSeconds = 30;
+    public const int DefaultIdleAfterSeconds = 300;
+    public const int MaximumIdleAfterSeconds = 3600;
+
     public const string RetroAppearance = "Retro";
     public const string DefaultAppearance = "Default";
 
@@ -57,6 +67,27 @@ public sealed class AppSettings
     public int GpuMemoryTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
     public int GpuFanPollingSeconds { get; set; } = DefaultPollingSeconds;
 
+    /// <summary>
+    /// Poll more slowly once the machine has had no keyboard or mouse input for
+    /// <see cref="IdleAfterSeconds"/>. Uses the same unified/individual mode as active polling, so
+    /// choosing individual intervals gives an idle interval per metric too.
+    /// </summary>
+    public bool UseIdlePolling { get; set; } = true;
+
+    public int IdleAfterSeconds { get; set; } = DefaultIdleAfterSeconds;
+
+    public int IdleUnifiedPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+
+    public int IdleCpuTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleCpuUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleMemoryUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+
+    public int IdleGpuTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleGpuComputeUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleGpuMemoryUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleGpuMemoryTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleGpuFanPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+
     /// <summary>History collection is on by default.</summary>
     public bool CollectHistory { get; set; } = true;
 
@@ -80,10 +111,14 @@ public sealed class AppSettings
     /// <summary>When locked, the widget cannot be dragged or resized by mistake.</summary>
     public bool WidgetLocked { get; set; }
 
-    // Widget placement. Kept here so a borderless, draggable, resizable widget comes back where it
-    // was left. NaN means "not positioned yet" and lets the window pick its own default corner.
-    public double WidgetLeft { get; set; } = double.NaN;
-    public double WidgetTop { get; set; } = double.NaN;
+    // Widget placement, so a borderless, draggable, resizable widget comes back where it was
+    // left. Null means "not positioned yet" and lets the window pick its own default corner.
+    //
+    // Nullable rather than NaN on purpose: System.Text.Json refuses to write NaN at all, so a NaN
+    // sentinel made the very first save of a fresh settings object throw. Null round-trips as JSON
+    // null and expresses the same thing.
+    public double? WidgetLeft { get; set; }
+    public double? WidgetTop { get; set; }
     public double WidgetWidth { get; set; } = 200;
     public double WidgetHeight { get; set; } = 236;
 
@@ -110,8 +145,15 @@ public sealed class AppSettings
     /// The effective interval for one metric: the unified value when unified mode is on, otherwise
     /// that metric's own value. Always returns a clamped, valid number of seconds.
     /// </summary>
-    public int ResolveIntervalSeconds(HardwareMetrics metric)
+    public int ResolveIntervalSeconds(HardwareMetrics metric, bool idle = false)
     {
+        if (idle && UseIdlePolling)
+        {
+            return UseUnifiedPollingInterval
+                ? ClampIdle(IdleUnifiedPollingSeconds)
+                : ClampIdle(IdleIntervalOf(metric));
+        }
+
         if (UseUnifiedPollingInterval)
         {
             return Clamp(UnifiedPollingSeconds);
@@ -130,6 +172,20 @@ public sealed class AppSettings
             _ => DefaultPollingSeconds,
         });
     }
+
+    /// <summary>The configured idle interval for one metric, before clamping.</summary>
+    public int IdleIntervalOf(HardwareMetrics metric) => metric switch
+    {
+        HardwareMetrics.CpuTemperature => IdleCpuTemperaturePollingSeconds,
+        HardwareMetrics.CpuUsage => IdleCpuUsagePollingSeconds,
+        HardwareMetrics.MemoryUsage => IdleMemoryUsagePollingSeconds,
+        HardwareMetrics.GpuTemperature => IdleGpuTemperaturePollingSeconds,
+        HardwareMetrics.GpuComputeUsage => IdleGpuComputeUsagePollingSeconds,
+        HardwareMetrics.GpuMemoryUsage => IdleGpuMemoryUsagePollingSeconds,
+        HardwareMetrics.GpuMemoryTemperature => IdleGpuMemoryTemperaturePollingSeconds,
+        HardwareMetrics.GpuFan => IdleGpuFanPollingSeconds,
+        _ => DefaultIdlePollingSeconds,
+    };
 
     /// <summary>
     /// The metrics the widget should show, in display order. Falls back to the full default order
@@ -173,6 +229,12 @@ public sealed class AppSettings
     public static bool IsValidInterval(int seconds) =>
         seconds is >= MinimumPollingSeconds and <= MaximumPollingSeconds;
 
+    public static bool IsValidIdleInterval(int seconds) =>
+        seconds is >= MinimumIdlePollingSeconds and <= MaximumIdlePollingSeconds;
+
+    public static bool IsValidIdleAfter(int seconds) =>
+        seconds is >= MinimumIdleAfterSeconds and <= MaximumIdleAfterSeconds;
+
     /// <summary>
     /// Whether two settings objects produce the same polling schedule. Settings are saved for
     /// reasons that have nothing to do with polling -- dragging or resizing the widget persists its
@@ -189,7 +251,18 @@ public sealed class AppSettings
         && GpuComputeUsagePollingSeconds == other.GpuComputeUsagePollingSeconds
         && GpuMemoryUsagePollingSeconds == other.GpuMemoryUsagePollingSeconds
         && GpuMemoryTemperaturePollingSeconds == other.GpuMemoryTemperaturePollingSeconds
-        && GpuFanPollingSeconds == other.GpuFanPollingSeconds;
+        && GpuFanPollingSeconds == other.GpuFanPollingSeconds
+        && UseIdlePolling == other.UseIdlePolling
+        && IdleAfterSeconds == other.IdleAfterSeconds
+        && IdleUnifiedPollingSeconds == other.IdleUnifiedPollingSeconds
+        && IdleCpuTemperaturePollingSeconds == other.IdleCpuTemperaturePollingSeconds
+        && IdleCpuUsagePollingSeconds == other.IdleCpuUsagePollingSeconds
+        && IdleMemoryUsagePollingSeconds == other.IdleMemoryUsagePollingSeconds
+        && IdleGpuTemperaturePollingSeconds == other.IdleGpuTemperaturePollingSeconds
+        && IdleGpuComputeUsagePollingSeconds == other.IdleGpuComputeUsagePollingSeconds
+        && IdleGpuMemoryUsagePollingSeconds == other.IdleGpuMemoryUsagePollingSeconds
+        && IdleGpuMemoryTemperaturePollingSeconds == other.IdleGpuMemoryTemperaturePollingSeconds
+        && IdleGpuFanPollingSeconds == other.IdleGpuFanPollingSeconds;
 
     public static string NormalizeAppearance(string? appearance) =>
         appearance == DefaultAppearance ? DefaultAppearance : RetroAppearance;
@@ -216,6 +289,17 @@ public sealed class AppSettings
         GpuMemoryUsagePollingSeconds = Clamp(GpuMemoryUsagePollingSeconds);
         GpuMemoryTemperaturePollingSeconds = Clamp(GpuMemoryTemperaturePollingSeconds);
         GpuFanPollingSeconds = Clamp(GpuFanPollingSeconds);
+
+        IdleAfterSeconds = Math.Clamp(IdleAfterSeconds, MinimumIdleAfterSeconds, MaximumIdleAfterSeconds);
+        IdleUnifiedPollingSeconds = ClampIdle(IdleUnifiedPollingSeconds);
+        IdleCpuTemperaturePollingSeconds = ClampIdle(IdleCpuTemperaturePollingSeconds);
+        IdleCpuUsagePollingSeconds = ClampIdle(IdleCpuUsagePollingSeconds);
+        IdleMemoryUsagePollingSeconds = ClampIdle(IdleMemoryUsagePollingSeconds);
+        IdleGpuTemperaturePollingSeconds = ClampIdle(IdleGpuTemperaturePollingSeconds);
+        IdleGpuComputeUsagePollingSeconds = ClampIdle(IdleGpuComputeUsagePollingSeconds);
+        IdleGpuMemoryUsagePollingSeconds = ClampIdle(IdleGpuMemoryUsagePollingSeconds);
+        IdleGpuMemoryTemperaturePollingSeconds = ClampIdle(IdleGpuMemoryTemperaturePollingSeconds);
+        IdleGpuFanPollingSeconds = ClampIdle(IdleGpuFanPollingSeconds);
 
         WidgetAppearance = NormalizeAppearance(WidgetAppearance);
         WidgetFont = NormalizeFont(WidgetFont);
@@ -268,6 +352,17 @@ public sealed class AppSettings
         GpuMemoryTemperaturePollingSeconds = GpuMemoryTemperaturePollingSeconds,
         GpuFanPollingSeconds = GpuFanPollingSeconds,
         CollectHistory = CollectHistory,
+        UseIdlePolling = UseIdlePolling,
+        IdleAfterSeconds = IdleAfterSeconds,
+        IdleUnifiedPollingSeconds = IdleUnifiedPollingSeconds,
+        IdleCpuTemperaturePollingSeconds = IdleCpuTemperaturePollingSeconds,
+        IdleCpuUsagePollingSeconds = IdleCpuUsagePollingSeconds,
+        IdleMemoryUsagePollingSeconds = IdleMemoryUsagePollingSeconds,
+        IdleGpuTemperaturePollingSeconds = IdleGpuTemperaturePollingSeconds,
+        IdleGpuComputeUsagePollingSeconds = IdleGpuComputeUsagePollingSeconds,
+        IdleGpuMemoryUsagePollingSeconds = IdleGpuMemoryUsagePollingSeconds,
+        IdleGpuMemoryTemperaturePollingSeconds = IdleGpuMemoryTemperaturePollingSeconds,
+        IdleGpuFanPollingSeconds = IdleGpuFanPollingSeconds,
         WidgetAppearance = WidgetAppearance,
         WidgetFont = WidgetFont,
         WidgetTextWeight = WidgetTextWeight,
@@ -291,4 +386,7 @@ public sealed class AppSettings
 
     private static int Clamp(int seconds) =>
         Math.Clamp(seconds, MinimumPollingSeconds, MaximumPollingSeconds);
+
+    private static int ClampIdle(int seconds) =>
+        Math.Clamp(seconds, MinimumIdlePollingSeconds, MaximumIdlePollingSeconds);
 }
