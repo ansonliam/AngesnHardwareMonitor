@@ -6,10 +6,24 @@ using HardwareWidget.Settings;
 
 namespace HardwareWidget.ViewModels;
 
-/// <summary>One entry in a polling-interval ComboBox.</summary>
+/// <summary>
+/// One entry in any of the interval ComboBoxes. Held as seconds, because seconds are what every
+/// interval setting persists, but shown in whichever unit reads naturally: sub-minute values in
+/// seconds, whole minutes in minutes.
+/// </summary>
 public sealed record PollingIntervalOption(int Seconds)
 {
-    public string Label => Seconds == 1 ? "1 second" : $"{Seconds} seconds";
+    public string Label => Seconds switch
+    {
+        1 => "1 second",
+        < 60 => $"{Seconds} seconds",
+        60 => "1 minute",
+
+        // Anything that is not a whole number of minutes stays in seconds; a hand-edited 90 reads
+        // better as "90 seconds" than "1.5 minutes".
+        _ when Seconds % 60 == 0 => $"{Seconds / 60} minutes",
+        _ => $"{Seconds} seconds",
+    };
 
     /// <summary>
     /// The dialog's ComboBox template renders the selected item through a plain ContentPresenter,
@@ -17,25 +31,6 @@ public sealed record PollingIntervalOption(int Seconds)
     /// showed "PollingIntervalOption { Seconds = 30 }". Formatting here rather than in the template
     /// keeps every ComboBox that shows one of these correct by construction.
     /// </summary>
-    public override string ToString() => Label;
-}
-
-/// <summary>
-/// One entry in the "consider idle after" ComboBox. Held as seconds to match what is persisted,
-/// but shown in minutes above the shortest choice, which is the unit that reads naturally for an
-/// idle threshold -- "5 minutes" rather than "300 seconds".
-/// </summary>
-public sealed record IdleAfterOption(int Seconds)
-{
-    public string Label =>
-        // The shortest choice reads better as "60 seconds" than "1 minute"; everything above it is
-        // phrased in minutes. A hand-edited value that is not a whole number of minutes also falls
-        // back to seconds, which is clearer than rendering "0.75 minutes".
-        Seconds < 120 || Seconds % 60 != 0
-            ? $"{Seconds} seconds"
-            : $"{Seconds / 60} minutes";
-
-    /// <summary>The ComboBox template formats items via ToString(); see PollingIntervalOption.</summary>
     public override string ToString() => Label;
 }
 
@@ -68,7 +63,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _collectHistory;
     private bool _useUnifiedPollingInterval;
     private bool _useIdlePolling;
-    private IdleAfterOption _idleAfter;
+    private PollingIntervalOption _idleAfter;
     private PollingIntervalOption _idleUnifiedInterval;
     private PollingIntervalOption _idleCpuTemperatureInterval;
     private PollingIntervalOption _idleCpuUsageInterval;
@@ -119,13 +114,13 @@ public sealed class SettingsViewModel : ObservableObject
                 .OrderBy(value => value)
                 .Select(value => new PollingIntervalOption(value)));
 
-        IdleAfterOptions = new ObservableCollection<IdleAfterOption>(
+        IdleAfterOptions = new ObservableCollection<PollingIntervalOption>(
             OfferedIdleAfterSeconds
                 .Append(current.IdleAfterSeconds)
                 .Where(AppSettings.IsValidIdleAfter)
                 .Distinct()
                 .OrderBy(value => value)
-                .Select(value => new IdleAfterOption(value)));
+                .Select(value => new PollingIntervalOption(value)));
 
         _widgetAppearance = current.WidgetAppearance;
         _widgetFont = current.WidgetFont;
@@ -197,7 +192,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public ObservableCollection<PollingIntervalOption> IdleIntervalOptions { get; }
 
-    public ObservableCollection<IdleAfterOption> IdleAfterOptions { get; }
+    public ObservableCollection<PollingIntervalOption> IdleAfterOptions { get; }
 
     /// <summary>Five-stage thresholds, one row per displayed metric.</summary>
     public ObservableCollection<MetricStageRowViewModel> StageRows { get; }
@@ -312,7 +307,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public bool IdleIndividualVisible => UseIdlePolling && !UseUnifiedPollingInterval;
 
-    public IdleAfterOption IdleAfter
+    public PollingIntervalOption IdleAfter
     {
         get => _idleAfter;
         set => SetPending(ref _idleAfter, value);
@@ -632,7 +627,7 @@ public sealed class SettingsViewModel : ObservableObject
         IdleIntervalOptions.FirstOrDefault(option => option.Seconds == seconds)
         ?? IdleIntervalOptions.First(option => option.Seconds == AppSettings.DefaultIdlePollingSeconds);
 
-    private IdleAfterOption ResolveIdleAfter(int seconds) =>
+    private PollingIntervalOption ResolveIdleAfter(int seconds) =>
         IdleAfterOptions.FirstOrDefault(option => option.Seconds == seconds)
         ?? IdleAfterOptions.First(option => option.Seconds == AppSettings.DefaultIdleAfterSeconds);
 }
