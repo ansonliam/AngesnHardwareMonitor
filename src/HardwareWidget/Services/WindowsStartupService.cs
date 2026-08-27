@@ -25,8 +25,17 @@ namespace HardwareWidget.Services;
 /// </summary>
 public sealed class WindowsStartupService
 {
-    /// <summary>Stable name. Renaming it would orphan tasks registered by earlier versions.</summary>
-    private const string TaskName = "HardwareWidget.Startup";
+    /// <summary>
+    /// Registered under the user's own Task Scheduler folder rather than at the root, alongside
+    /// their other tasks. schtasks creates the folder if it does not exist.
+    /// </summary>
+    private const string TaskName = @"Anson\HardwareWidget.Startup";
+
+    /// <summary>
+    /// Where an earlier build registered the task, at the root of the task library. Still cleaned up
+    /// so enabling this setting does not silently leave two tasks both launching the widget.
+    /// </summary>
+    private const string LegacyTaskName = "HardwareWidget.Startup";
 
     /// <summary>
     /// Small logon delay. Starting at the exact moment of sign-in competes with the shell for a
@@ -34,7 +43,10 @@ public sealed class WindowsStartupService
     /// </summary>
     private const string LogonDelay = "PT10S";
 
-    public bool IsEnabled() => RunSchTasks($"/Query /TN \"{TaskName}\"").ExitCode == 0;
+    public bool IsEnabled() => Exists(TaskName) || Exists(LegacyTaskName);
+
+    private static bool Exists(string taskName) =>
+        RunSchTasks($"/Query /TN \"{taskName}\"").ExitCode == 0;
 
     /// <summary>
     /// Registers or removes the logon task. Returns false with a reason rather than throwing, so the
@@ -74,6 +86,15 @@ public sealed class WindowsStartupService
             var current = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(current))
             {
+                return;
+            }
+
+            // A task left at the old root location is migrated by simply re-registering, which
+            // writes the new path and removes the legacy one.
+            if (!Exists(TaskName) && Exists(LegacyTaskName))
+            {
+                AppLog.Info($"Migrating the startup task from '{LegacyTaskName}' to '{TaskName}'.");
+                TryRegister(out _);
                 return;
             }
 
@@ -130,7 +151,10 @@ public sealed class WindowsStartupService
         }
 
         // schtasks /XML requires UTF-16; it rejects a UTF-8 file outright.
-        var xmlPath = Path.Combine(Path.GetTempPath(), $"{TaskName}-{Guid.NewGuid():N}.xml");
+        //
+        // The filename is a literal rather than derived from TaskName: TaskName contains a folder
+        // separator now, which Path.Combine would turn into a subdirectory that does not exist.
+        var xmlPath = Path.Combine(Path.GetTempPath(), $"HardwareWidget-task-{Guid.NewGuid():N}.xml");
 
         try
         {
@@ -140,7 +164,8 @@ public sealed class WindowsStartupService
             var result = RunSchTasks($"/Create /TN \"{TaskName}\" /XML \"{xmlPath}\" /F");
             if (result.ExitCode == 0)
             {
-                AppLog.Info($"Startup task registered for {executablePath}.");
+                AppLog.Info($"Startup task '{TaskName}' registered for {executablePath}.");
+                RemoveLegacyTask();
                 return true;
             }
 
@@ -168,9 +193,11 @@ public sealed class WindowsStartupService
         error = null;
 
         var result = RunSchTasks($"/Delete /TN \"{TaskName}\" /F");
+        RemoveLegacyTask();
 
-        // Deleting a task that is already gone is success from the caller's point of view.
-        if (result.ExitCode == 0 || !IsEnabled())
+        // Deleting a task that is already gone is success from the caller's point of view, so the
+        // check is whether anything is still registered rather than the exit code alone.
+        if (!IsEnabled())
         {
             AppLog.Info("Startup task removed.");
             return true;
@@ -179,6 +206,19 @@ public sealed class WindowsStartupService
         error = Describe(result);
         AppLog.Warn($"Startup task removal failed: {error}");
         return false;
+    }
+
+    private static void RemoveLegacyTask()
+    {
+        if (!Exists(LegacyTaskName))
+        {
+            return;
+        }
+
+        var result = RunSchTasks($"/Delete /TN \"{LegacyTaskName}\" /F");
+        AppLog.Info(result.ExitCode == 0
+            ? $"Removed the legacy root-level '{LegacyTaskName}' task."
+            : $"Could not remove the legacy '{LegacyTaskName}' task: {Describe(result)}");
     }
 
     /// <summary>

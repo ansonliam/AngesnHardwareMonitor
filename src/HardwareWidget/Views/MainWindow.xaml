@@ -36,14 +36,14 @@
                 <MenuItem Command="{Binding OpenSettingsCommand}" Header="Settings" />
                 <Separator />
                 <MenuItem x:Name="PollingIntervalMenuItem" Header="Polling interval" />
-                <MenuItem Header="Text size">
+                <MenuItem x:Name="TextSizeMenuItem" Header="Text size">
                     <MenuItem Click="OnTextScaleClick" Header="Small" Tag="0.85" IsCheckable="True" />
                     <MenuItem Click="OnTextScaleClick" Header="Normal" Tag="1.0" IsCheckable="True" />
                     <MenuItem Click="OnTextScaleClick" Header="Large" Tag="1.15" IsCheckable="True" />
                     <MenuItem Click="OnTextScaleClick" Header="Larger" Tag="1.3" IsCheckable="True" />
                     <MenuItem Click="OnTextScaleClick" Header="Largest" Tag="1.5" IsCheckable="True" />
                 </MenuItem>
-                <MenuItem Header="Opacity">
+                <MenuItem x:Name="OpacityMenuItem" Header="Opacity">
                     <MenuItem Click="OnOpacityClick" Header="100%" Tag="1.0" IsCheckable="True" />
                     <MenuItem Click="OnOpacityClick" Header="90%" Tag="0.9" IsCheckable="True" />
                     <MenuItem Click="OnOpacityClick" Header="80%" Tag="0.8" IsCheckable="True" />

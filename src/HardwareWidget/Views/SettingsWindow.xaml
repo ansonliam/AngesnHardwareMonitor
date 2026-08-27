@@ -74,6 +74,18 @@
 
         <ScrollViewer Grid.Row="0" Padding="0,0,10,0" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!-- ======================= General: applies immediately ==================== -->
+                <TextBlock Style="{StaticResource SectionHeading}" Text="General" />
+
+                <CheckBox Content="Start with Windows"
+                          IsChecked="{Binding StartWithWindows}"
+                          Margin="0,4,0,0" />
+                <TextBlock Margin="0,4,0,0"
+                           Style="{StaticResource HintText}"
+                           Text="Automatically start the widget when you sign in, about 10 seconds after logon. This registers a scheduled task with administrator rights, so later sign-ins start the widget without a UAC prompt. It does not affect Defender or the driver blocking, so it will not restore CPU temperature on its own." />
+
+                <Separator Margin="0,16,0,12" />
+
                 <!-- ==================== Appearance: applies immediately =================== -->
                 <TextBlock Style="{StaticResource SectionHeading}" Text="Appearance" />
                 <TextBlock Margin="0,0,0,8"
@@ -114,12 +126,6 @@
                           IsChecked="{Binding ShowRamUsedAndTotal}"
                           Margin="0,10,0,0" />
 
-                <CheckBox Content="Start with Windows"
-                          IsChecked="{Binding StartWithWindows}"
-                          Margin="0,8,0,0" />
-                <TextBlock Margin="0,4,0,0"
-                           Style="{StaticResource HintText}"
-                           Text="Automatically start the widget when you sign in, about 10 seconds after logon. This registers a scheduled task with administrator rights, so later sign-ins start the widget without a UAC prompt. It does not affect Defender or the driver blocking, so it will not restore CPU temperature on its own." />
 
                 <TextBlock Margin="0,8,0,0"
                            Style="{StaticResource HintText}"

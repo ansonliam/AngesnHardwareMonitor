@@ -172,34 +172,34 @@ public partial class MainWindow : Window
 
     // ----------------------------------------------------------- context menu
 
-    /// <summary>Ticks the entries that match the persisted state each time the menu opens.</summary>
+    /// <summary>
+    /// Ticks the entries that match the persisted state each time the menu opens.
+    ///
+    /// Each submenu is addressed by name and told which value it reflects. The previous version
+    /// walked every submenu generically and inferred the value from the parent's header text, which
+    /// silently mis-handled any submenu it did not recognise: the Polling interval items were
+    /// compared against the text scale, so every one of them came out unticked.
+    /// </summary>
     private void OnContextMenuOpened(object sender, RoutedEventArgs eventArgs)
     {
         var settings = _settings.Current;
 
         AlwaysOnTopMenuItem.IsChecked = settings.WidgetAlwaysOnTop;
         LockWidgetMenuItem.IsChecked = settings.WidgetLocked;
+
+        TickMatching(TextSizeMenuItem, settings.WidgetTextScale);
+        TickMatching(OpacityMenuItem, settings.WidgetOpacity);
         BuildPollingIntervalMenu(settings);
+    }
 
-        if (sender is not ContextMenu menu)
+    /// <summary>Ticks whichever child's Tag matches <paramref name="current"/>, and clears the rest.</summary>
+    private static void TickMatching(MenuItem submenu, double current)
+    {
+        foreach (var child in submenu.Items.OfType<MenuItem>())
         {
-            return;
-        }
-
-        foreach (var item in menu.Items.OfType<MenuItem>())
-        {
-            foreach (var child in item.Items.OfType<MenuItem>())
+            if (TryGetTag(child, out var value))
             {
-                if (!TryGetTag(child, out var tagValue))
-                {
-                    continue;
-                }
-
-                var target = item.Header as string == "Opacity"
-                    ? settings.WidgetOpacity
-                    : settings.WidgetTextScale;
-
-                child.IsChecked = Math.Abs(tagValue - target) < 0.001;
+                child.IsChecked = Math.Abs(value - current) < 0.001;
             }
         }
     }
@@ -220,6 +220,11 @@ public partial class MainWindow : Window
         }
 
         PollingIntervalMenuItem.Visibility = Visibility.Visible;
+
+        // Surfaced on the header as well, so the current cadence is visible without opening the
+        // submenu at all.
+        var active = new PollingIntervalOption(settings.UnifiedPollingSeconds).Label;
+        PollingIntervalMenuItem.Header = $"Polling interval  ({active})";
         PollingIntervalMenuItem.Items.Clear();
 
         foreach (var seconds in AppSettings.OfferedIntervalSeconds)
