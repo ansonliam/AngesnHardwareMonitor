@@ -70,7 +70,7 @@ waiting out a long idle interval.
 
 ### History
 
-`%LOCALAPPDATA%\HardwareWidget\Data\hardware-history.db`, one row per (metric, timestamp):
+`%LOCALAPPDATA%\AngesnHardwareWidget\Data\hardware-history.db`, one row per (metric, timestamp):
 
 ```sql
 CREATE TABLE MetricReadings (
@@ -130,7 +130,7 @@ that rule, because `0` RPM is genuine in zero-fan idle mode.
 
 ## Start with Windows
 
-Settings offers **Start with Windows**, which registers a Scheduled Task (`HardwareWidget.Startup`)
+Settings offers **Start with Windows**, which registers a Scheduled Task (`\Anson\AngesnHardwareWidget.Startup`)
 with an at-logon trigger, a ~10 second delay, and `RunLevel = HighestAvailable`.
 
 The `HKCU\...\Run` key is deliberately not used. It cannot launch an elevated process — nothing at
@@ -149,5 +149,5 @@ its own path on next launch.
 ## Build
 
 ```bash
-dotnet build src/HardwareWidget -c Release
+dotnet build src/AngesnHardwareWidget -c Release
 ```

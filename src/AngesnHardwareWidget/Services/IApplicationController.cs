@@ -1,0 +1,22 @@
+namespace AngesnHardwareWidget.Services;
+
+/// <summary>
+/// What the tray icon is allowed to ask of the application. Mirrors the AI Usage Monitor's
+/// controller seam so the tray service has no direct dependency on App or on any window.
+/// </summary>
+public interface IApplicationController
+{
+    bool IsWidgetVisible();
+
+    void ShowWidget();
+
+    void HideWidget();
+
+    /// <summary>Samples every metric now, rather than waiting for the next scheduled cycle.</summary>
+    void RefreshNow();
+
+    void ShowSettings();
+
+    /// <summary>Named to avoid colliding with WPF's Application.Exit event.</summary>
+    void ExitApplication();
+}
