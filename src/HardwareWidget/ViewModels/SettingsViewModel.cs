@@ -10,6 +10,14 @@ namespace HardwareWidget.ViewModels;
 public sealed record PollingIntervalOption(int Seconds)
 {
     public string Label => Seconds == 1 ? "1 second" : $"{Seconds} seconds";
+
+    /// <summary>
+    /// The dialog's ComboBox template renders the selected item through a plain ContentPresenter,
+    /// which formats via ToString() and does not honour DisplayMemberPath -- without this the box
+    /// showed "PollingIntervalOption { Seconds = 30 }". Formatting here rather than in the template
+    /// keeps every ComboBox that shows one of these correct by construction.
+    /// </summary>
+    public override string ToString() => Label;
 }
 
 /// <summary>
@@ -85,17 +93,32 @@ public sealed class SettingsViewModel : ObservableObject
         _gpuMemoryTemperatureInterval = Option(current.GpuMemoryTemperaturePollingSeconds);
         _gpuFanInterval = Option(current.GpuFanPollingSeconds);
 
+        // Rows are listed in the widget's own display order, so the editor and the widget always
+        // agree about what "first" means.
+        var labels = new Dictionary<HardwareMetrics, (string Label, string Unit)>
+        {
+            [HardwareMetrics.CpuTemperature] = ("CPU temperature", "°C"),
+            [HardwareMetrics.CpuUsage] = ("CPU usage", "%"),
+            [HardwareMetrics.MemoryUsage] = ("RAM usage", "%"),
+            [HardwareMetrics.GpuTemperature] = ("GPU temperature", "°C"),
+            [HardwareMetrics.GpuComputeUsage] = ("GPU core usage", "%"),
+            [HardwareMetrics.GpuMemoryUsage] = ("GPU memory usage", "%"),
+            [HardwareMetrics.GpuMemoryTemperature] = ("VRAM temperature", "°C"),
+            [HardwareMetrics.GpuFan] = ("GPU fan", "RPM"),
+        };
+
+        var byKey = HardwareMetricsExtensions.Individual.ToDictionary(MetricTypes.DisplayKeyOf, m => m);
+        var orderedMetrics = current.MetricDisplay
+            .Where(entry => byKey.ContainsKey(entry.MetricType))
+            .Select(entry => byKey[entry.MetricType])
+            .ToList();
+
         StageRows = new ObservableCollection<MetricStageRowViewModel>(
-        [
-            Row(current, HardwareMetrics.CpuTemperature, "CPU temperature", "°C"),
-            Row(current, HardwareMetrics.CpuUsage, "CPU usage", "%"),
-            Row(current, HardwareMetrics.MemoryUsage, "RAM usage", "%"),
-            Row(current, HardwareMetrics.GpuTemperature, "GPU temperature", "°C"),
-            Row(current, HardwareMetrics.GpuComputeUsage, "GPU compute usage", "%"),
-            Row(current, HardwareMetrics.GpuMemoryUsage, "GPU memory usage", "%"),
-            Row(current, HardwareMetrics.GpuMemoryTemperature, "GPU memory temperature", "°C"),
-            Row(current, HardwareMetrics.GpuFan, "GPU fan", "RPM"),
-        ]);
+            orderedMetrics.Select(metric =>
+            {
+                var (label, unit) = labels[metric];
+                return Row(current, metric, label, unit);
+            }));
 
         foreach (var row in StageRows)
         {
@@ -282,6 +305,9 @@ public sealed class SettingsViewModel : ObservableObject
         ValidationMessage = null;
 
         var updated = _settings.Current;
+        updated.MetricDisplay = StageRows
+            .Select(row => new MetricDisplaySettings { MetricType = row.MetricType, Visible = row.IsVisible })
+            .ToList();
         updated.WidgetAppearance = AppSettings.NormalizeAppearance(WidgetAppearance);
         updated.WidgetFont = AppSettings.NormalizeFont(WidgetFont);
         updated.WidgetTextWeight = AppSettings.NormalizeTextWeight(WidgetTextWeight);
@@ -326,6 +352,28 @@ public sealed class SettingsViewModel : ObservableObject
         SavedMessage = $"Monitoring settings applied at {DateTime.Now:HH:mm:ss}.";
     }
 
+    /// <summary>
+    /// Moves a row, which is what reorders the widget. Applied live so the widget reflows as the
+    /// row is dropped.
+    /// </summary>
+    public void MoveRow(MetricStageRowViewModel row, int targetIndex)
+    {
+        var currentIndex = StageRows.IndexOf(row);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, StageRows.Count - 1);
+        if (targetIndex == currentIndex)
+        {
+            return;
+        }
+
+        StageRows.Move(currentIndex, targetIndex);
+        ApplyLive();
+    }
+
     private void ResetStagesToDefaults()
     {
         foreach (var row in StageRows)
@@ -356,7 +404,12 @@ public sealed class SettingsViewModel : ObservableObject
         HardwareMetrics metric,
         string label,
         string unit) =>
-        new(MetricTypes.DisplayKeyOf(metric), label, unit, settings.ResolveStages(metric));
+        new(
+            MetricTypes.DisplayKeyOf(metric),
+            label,
+            unit,
+            settings.ResolveStages(metric),
+            settings.IsVisible(metric));
 
     private void SetLive<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

@@ -13,17 +13,24 @@ public sealed class MetricStageRowViewModel : ObservableObject
 {
     private readonly string _metricType;
 
+    private bool _isVisible;
     private string _stage1Maximum;
     private string _stage2Maximum;
     private string _stage3Maximum;
     private string _stage4Maximum;
     private bool _suppressEdited;
 
-    public MetricStageRowViewModel(string metricType, string label, string unit, MetricStageSettings stages)
+    public MetricStageRowViewModel(
+        string metricType,
+        string label,
+        string unit,
+        MetricStageSettings stages,
+        bool isVisible)
     {
         _metricType = metricType;
         Label = label;
         Unit = unit;
+        _isVisible = isVisible;
         Minimum = stages.Minimum;
         Maximum = stages.Maximum;
 
@@ -39,6 +46,19 @@ public sealed class MetricStageRowViewModel : ObservableObject
     public string MetricType => _metricType;
 
     public string Label { get; }
+
+    /// <summary>Whether this metric appears in the widget. Applies live, like the thresholds.</summary>
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (SetProperty(ref _isVisible, value))
+            {
+                Edited?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
 
     /// <summary>"°C", "%" or "RPM", shown so the numbers are unambiguous.</summary>
     public string Unit { get; }

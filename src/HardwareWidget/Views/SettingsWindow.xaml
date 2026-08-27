@@ -36,9 +36,9 @@
                 <Setter Property="Width" Value="170" />
                 <Setter Property="Margin" Value="0,3" />
             </Style>
-            <Style x:Key="IntervalCombo" TargetType="ComboBox" BasedOn="{StaticResource RowCombo}">
-                <Setter Property="DisplayMemberPath" Value="Label" />
-            </Style>
+            <!-- No DisplayMemberPath: the ComboBox template formats items via ToString(), which
+                 PollingIntervalOption overrides. -->
+            <Style x:Key="IntervalCombo" TargetType="ComboBox" BasedOn="{StaticResource RowCombo}" />
             <Style x:Key="SectionHeading" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="{StaticResource DialogTextBrush}" />
                 <Setter Property="FontSize" Value="14" />
@@ -124,7 +124,7 @@
                 <TextBlock Style="{StaticResource SectionHeading}" Text="Colour stages" />
                 <TextBlock Margin="0,0,0,6"
                            Style="{StaticResource HintText}"
-                           Text="Applies immediately. Each metric is graded over its own scale rather than 0–100, because a CPU is never near 0 °C and fan RPM is not a percentage. Enter the upper bound of stages 1 to 4; stage 5 is everything above stage 4." />
+                           Text="Applies immediately. Untick a metric to hide it from the widget, and drag the grip to reorder — the widget follows this order. Each metric is graded over its own scale rather than 0–100, because a CPU is never near 0 °C and fan RPM is not a percentage. Enter the upper bound of stages 1 to 4; stage 5 is everything above stage 4." />
 
                 <StackPanel Margin="0,4,0,10" Orientation="Horizontal">
                     <Border Background="#2ECC71" CornerRadius="2" Height="12" Margin="0,0,4,0" Width="20" />
@@ -143,8 +143,8 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Style="{StaticResource StageHeader}" Text="Metric"
-                               TextAlignment="Left" VerticalAlignment="Bottom" Width="Auto" />
+                    <TextBlock Grid.Column="0" Margin="41,0,0,0" Style="{StaticResource StageHeader}"
+                               Text="Show / metric" TextAlignment="Left" VerticalAlignment="Bottom" Width="Auto" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <TextBlock Style="{StaticResource StageHeader}" Text="1 ≤" />
                         <TextBlock Style="{StaticResource StageHeader}" Text="2 ≤" />
@@ -155,26 +155,72 @@
                                Text="Scale" TextAlignment="Left" VerticalAlignment="Bottom" Width="92" />
                 </Grid>
 
-                <ItemsControl ItemsSource="{Binding StageRows}">
-                    <ItemsControl.ItemTemplate>
+                <!-- A ListBox rather than an ItemsControl so each row has a container to
+                     hit-test during a drag. Dragging starts only from the grip, so it cannot
+                     interfere with the checkbox or with typing in the threshold boxes. -->
+                <ListBox AllowDrop="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         HorizontalContentAlignment="Stretch"
+                         ItemsSource="{Binding StageRows}"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0,1" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="AllowDrop" Value="True" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Stretch" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <EventSetter Event="DragOver" Handler="OnRowDragOver" />
+                            <EventSetter Event="Drop" Handler="OnRowDrop" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:MetricStageRowViewModel}">
-                            <Grid Margin="0,2">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="{Binding Label}" />
+                                <TextBlock Grid.Column="0"
+                                           Cursor="SizeAll"
+                                           Foreground="{StaticResource DialogMutedTextBrush}"
+                                           FontSize="13"
+                                           Margin="0,0,8,0"
+                                           PreviewMouseLeftButtonDown="OnDragGripPressed"
+                                           Text="⋮⋮"
+                                           ToolTip="Drag to reorder — this is the order the widget shows"
+                                           VerticalAlignment="Center" />
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <CheckBox Grid.Column="1"
+                                          IsChecked="{Binding IsVisible}"
+                                          Margin="0,0,8,0"
+                                          ToolTip="Show this metric in the widget"
+                                          VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2" Style="{StaticResource RowLabel}" Text="{Binding Label}" />
+
+                                <StackPanel Grid.Column="3" Orientation="Horizontal">
                                     <TextBox Style="{StaticResource StageBox}" Text="{Binding Stage1Maximum, UpdateSourceTrigger=PropertyChanged}" />
                                     <TextBox Style="{StaticResource StageBox}" Text="{Binding Stage2Maximum, UpdateSourceTrigger=PropertyChanged}" />
                                     <TextBox Style="{StaticResource StageBox}" Text="{Binding Stage3Maximum, UpdateSourceTrigger=PropertyChanged}" />
                                     <TextBox Style="{StaticResource StageBox}" Text="{Binding Stage4Maximum, UpdateSourceTrigger=PropertyChanged}" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Column="2"
+                                <TextBlock Grid.Column="4"
                                            Margin="8,0,0,0"
                                            Style="{StaticResource HintText}"
                                            Text="{Binding ScaleText}"
@@ -182,8 +228,8 @@
                                            Width="92" />
                             </Grid>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <Button Command="{Binding ResetStagesCommand}"
                         Content="Reset stages to defaults"

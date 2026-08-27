@@ -52,10 +52,8 @@ public sealed class MainViewModel : ObservableObject
             [HardwareMetrics.GpuFan] = new(HardwareMetrics.GpuFan, "GPU FAN", MetricFormat.Rpm),
         };
 
-        // Display order matches the spec's readout.
-        Metrics = new ObservableCollection<MetricTileViewModel>(
-            HardwareMetricsExtensions.Individual.Select(metric => _tiles[metric]));
-
+        Metrics = [];
+        RebuildMetrics();
         RefreshAllTiles();
 
         _settings.SettingsChanged += (_, updated) => RunOnUi(() => ApplySettings(updated));
@@ -168,7 +166,30 @@ public sealed class MainViewModel : ObservableObject
         _current = updated;
         _palette = new MetricStagePalette(updated);
         OnPropertyChanged(nameof(WidgetAppearance));
+        RebuildMetrics();
         RefreshAllTiles();
+    }
+
+    /// <summary>
+    /// Rebuilds the displayed rows from the persisted order and visibility. The tile objects
+    /// themselves are reused from the cache, so hiding a metric and showing it again does not lose
+    /// its last reading or make the row flash as unavailable.
+    /// </summary>
+    private void RebuildMetrics()
+    {
+        var desired = _current.ResolveDisplayOrder();
+
+        if (Metrics.Count == desired.Count
+            && !Metrics.Where((tile, index) => tile.Metric != desired[index]).Any())
+        {
+            return;
+        }
+
+        Metrics.Clear();
+        foreach (var metric in desired)
+        {
+            Metrics.Add(_tiles[metric]);
+        }
     }
 
     private void RefreshAllTiles()

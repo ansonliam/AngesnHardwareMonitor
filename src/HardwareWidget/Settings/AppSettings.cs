@@ -94,6 +94,11 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, MetricStageSettings> MetricStages { get; set; } = [];
 
+    /// <summary>
+    /// Which metrics the widget shows, and in what order. List order is display order.
+    /// </summary>
+    public List<MetricDisplaySettings> MetricDisplay { get; set; } = [];
+
     public string Stage1Color { get; set; } = "#2ECC71";
     public string Stage2Color { get; set; } = "#9ACD32";
     public string Stage3Color { get; set; } = "#FFD21E";
@@ -124,6 +129,36 @@ public sealed class AppSettings
             HardwareMetrics.GpuFan => GpuFanPollingSeconds,
             _ => DefaultPollingSeconds,
         });
+    }
+
+    /// <summary>
+    /// The metrics the widget should show, in display order. Falls back to the full default order
+    /// if every metric has somehow been hidden, because an empty widget is not a useful state to
+    /// leave someone stuck in.
+    /// </summary>
+    public IReadOnlyList<HardwareMetrics> ResolveDisplayOrder()
+    {
+        var byKey = HardwareMetricsExtensions.Individual
+            .ToDictionary(MetricTypes.DisplayKeyOf, metric => metric);
+
+        var ordered = new List<HardwareMetrics>(byKey.Count);
+        foreach (var entry in MetricDisplay)
+        {
+            if (entry.Visible && byKey.TryGetValue(entry.MetricType, out var metric))
+            {
+                ordered.Add(metric);
+            }
+        }
+
+        return ordered.Count > 0 ? ordered : HardwareMetricsExtensions.Individual;
+    }
+
+    /// <summary>Whether one metric is shown in the widget. Unknown metrics default to visible.</summary>
+    public bool IsVisible(HardwareMetrics metric)
+    {
+        var key = MetricTypes.DisplayKeyOf(metric);
+        var entry = MetricDisplay.FirstOrDefault(item => item.MetricType == key);
+        return entry?.Visible ?? true;
     }
 
     /// <summary>Stage thresholds for a displayed metric, falling back to that metric's defaults.</summary>
@@ -191,13 +226,29 @@ public sealed class AppSettings
         WidgetHeight = double.IsFinite(WidgetHeight) ? Math.Clamp(WidgetHeight, 90, 1600) : 236;
 
         MetricStages ??= [];
-        foreach (var metric in HardwareMetricsExtensions.Individual)
+        MetricDisplay ??= [];
+
+        var knownKeys = HardwareMetricsExtensions.Individual.Select(MetricTypes.DisplayKeyOf).ToList();
+
+        foreach (var key in knownKeys)
         {
-            var key = MetricTypes.DisplayKeyOf(metric);
             if (!MetricStages.TryGetValue(key, out var stages) || !stages.IsValid())
             {
                 MetricStages[key] = MetricStageSettings.Default(key);
             }
+        }
+
+        // Drop keys this build no longer knows, then append any metric the file has never seen, so
+        // an older settings file picks up new metrics at the end instead of losing them.
+        MetricDisplay = MetricDisplay
+            .Where(entry => knownKeys.Contains(entry.MetricType))
+            .GroupBy(entry => entry.MetricType)
+            .Select(group => group.First())
+            .ToList();
+
+        foreach (var key in knownKeys.Where(key => MetricDisplay.All(entry => entry.MetricType != key)))
+        {
+            MetricDisplay.Add(new MetricDisplaySettings { MetricType = key, Visible = true });
         }
 
         return this;
@@ -229,6 +280,7 @@ public sealed class AppSettings
         WidgetWidth = WidgetWidth,
         WidgetHeight = WidgetHeight,
         MetricStages = MetricStages.ToDictionary(entry => entry.Key, entry => entry.Value.Clone()),
+        MetricDisplay = MetricDisplay.Select(entry => entry.Clone()).ToList(),
         Stage1Color = Stage1Color,
         Stage2Color = Stage2Color,
         Stage3Color = Stage3Color,
