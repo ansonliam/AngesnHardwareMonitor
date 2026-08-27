@@ -112,11 +112,17 @@ a CPU is never near 0 °C and fan RPM is not a percentage. All thresholds are ed
 
 ### CPU temperature and the WinRing0 driver
 
-LibreHardwareMonitor reads CPU temperature through the `WinRing0` kernel driver. On current Windows
-builds that driver is on Microsoft's vulnerable-driver blocklist, and its service fails to start
-with *"the file contains a virus or potentially unwanted software"* — so CPU temperature reads as
-unavailable (`--`) even when elevated. Everything else, including all GPU sensors and RAM, is
-unaffected because it does not need the driver.
+LibreHardwareMonitor reads CPU temperature through the `WinRing0` kernel driver, which it extracts
+next to the executable as `<AppName>.sys`. On current Windows builds Windows Defender deletes that
+file on sight, identifying it as `VulnerableDriver:WinNT/Winring0`; if the service does get
+registered, starting it then fails with *"the file contains a virus or potentially unwanted
+software"*. The driver is also on Microsoft's vulnerable-driver blocklist
+(`VulnerableDriverBlocklistEnable`), so excluding it from Defender is not necessarily sufficient.
+
+The result is that CPU temperature reads as unavailable (`--`). **Elevation does not change this** —
+the app requests administrator rights and still cannot load the driver. Everything else, including
+all GPU sensors and RAM, is unaffected because none of it needs the driver: GPU readings come from
+the vendor's user-mode API and RAM from ordinary Windows calls.
 
 A temperature sensor reporting exactly `0.00` is treated as unavailable rather than as a
 measurement, since a powered-on part is never at freezing point. Fan RPM deliberately does not get

@@ -334,9 +334,12 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             AppLog.Warn(
                 $"Temperature sensor '{sensor?.Name}' reports exactly 0 C, which means it could not " +
                 "be read rather than that the part is at freezing point. Reporting it as " +
-                "unavailable. On AMD CPUs this is usually the kernel driver (WinRing0) failing to " +
-                "load -- check that the app is elevated and that Windows' vulnerable-driver " +
-                "blocklist is not blocking it.");
+                "unavailable. For CPU temperature this is almost always the kernel driver: " +
+                "LibreHardwareMonitor extracts WinRing0 next to the executable as " +
+                "<AppName>.sys, and Windows Defender deletes it on sight as " +
+                "VulnerableDriver:WinNT/Winring0, so the sensor is enumerated but never populated. " +
+                "Elevation does not help -- check Defender's protection history, and note that " +
+                "Windows' vulnerable-driver blocklist may refuse the driver even if it is excluded.");
         }
 
         return null;
