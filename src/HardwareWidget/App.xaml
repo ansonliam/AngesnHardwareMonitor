@@ -7,11 +7,15 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Teal.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Light.Teal.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Same shell conventions as the AI Usage Monitor: MahApps Dark.Teal, Segoe UI
-                 Variable Text, compact buttons. -->
+            <!-- Light.Teal rather than Dark.Teal, because the widget is the only dark surface here
+                 and it paints its own card colours explicitly in MainWindow.ApplyAppearance. With a
+                 dark application theme, every control nobody had hand-styled inherited dark-theme
+                 colours instead - which is how the settings dialog ended up with a scrollbar whose
+                 hover state was a pale highlight meant for a dark background. A light app theme
+                 makes the dialogs correct by default and leaves the widget unaffected. -->
             <Style TargetType="Window">
                 <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.ThemeBackground}" />
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}" />
