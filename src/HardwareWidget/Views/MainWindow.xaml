@@ -32,8 +32,10 @@
              on the tray icon: it must not sit where someone aiming to dismiss the widget can hit it. -->
         <Border.ContextMenu>
             <ContextMenu Opened="OnContextMenuOpened">
+                <MenuItem Command="{Binding RefreshCommand}" Header="Refresh" />
                 <MenuItem Command="{Binding OpenSettingsCommand}" Header="Settings" />
                 <Separator />
+                <MenuItem x:Name="PollingIntervalMenuItem" Header="Polling interval" />
                 <MenuItem Header="Text size">
                     <MenuItem Click="OnTextScaleClick" Header="Small" Tag="0.85" IsCheckable="True" />
                     <MenuItem Click="OnTextScaleClick" Header="Normal" Tag="1.0" IsCheckable="True" />

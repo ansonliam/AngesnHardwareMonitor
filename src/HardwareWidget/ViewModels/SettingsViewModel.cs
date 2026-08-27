@@ -45,19 +45,21 @@ public sealed record PollingIntervalOption(int Seconds)
 /// </summary>
 public sealed class SettingsViewModel : ObservableObject
 {
-    private static readonly int[] OfferedSeconds = [5, 10, 30, 60, 120, 300];
+    private static readonly IReadOnlyList<int> OfferedSeconds = AppSettings.OfferedIntervalSeconds;
 
     // Idle cadences are allowed to be much longer than active ones, so they get their own lists.
     private static readonly int[] OfferedIdleSeconds = [10, 30, 60, 120, 300, 600, 900, 1800, 3600];
     private static readonly int[] OfferedIdleAfterSeconds = [60, 120, 300, 600, 900, 1800, 3600];
 
     private readonly SettingsService _settings;
+    private readonly WindowsStartupService _startup = new();
 
     // Live section.
     private string _widgetAppearance;
     private string _widgetFont;
     private string _widgetTextWeight;
     private bool _showRamUsedAndTotal;
+    private bool _startWithWindows;
 
     // Pending section, committed by Save.
     private bool _collectHistory;
@@ -126,6 +128,10 @@ public sealed class SettingsViewModel : ObservableObject
         _widgetFont = current.WidgetFont;
         _widgetTextWeight = current.WidgetTextWeight;
         _showRamUsedAndTotal = current.ShowRamUsedAndTotal;
+
+        // Read from the scheduled task rather than from settings.json: the task is the actual
+        // state, so if it was removed outside the app the checkbox still tells the truth.
+        _startWithWindows = _startup.IsEnabled();
 
         _collectHistory = current.CollectHistory;
         _useUnifiedPollingInterval = current.UseUnifiedPollingInterval;
@@ -262,6 +268,33 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _showRamUsedAndTotal;
         set => SetLive(ref _showRamUsedAndTotal, value);
+    }
+
+    /// <summary>
+    /// Registers or removes the logon task. Applied immediately, and reverted if Windows refuses,
+    /// so the checkbox never claims a state the system does not actually have.
+    /// </summary>
+    public bool StartWithWindows
+    {
+        get => _startWithWindows;
+        set
+        {
+            if (_startWithWindows == value)
+            {
+                return;
+            }
+
+            if (!_startup.TrySetEnabled(value, out var error))
+            {
+                ValidationMessage = $"Could not change the startup setting: {error}";
+                OnPropertyChanged();
+                return;
+            }
+
+            _startWithWindows = value;
+            ValidationMessage = null;
+            OnPropertyChanged();
+        }
     }
 
     // --------------------------------------------------- pending (needs Save)
@@ -514,10 +547,11 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Moves a row, which is what reorders the widget. Applied live so the widget reflows as the
-    /// row is dropped.
+    /// Moves a row without persisting anything. Called repeatedly while a drag is in progress, so
+    /// the list visibly reorders under the cursor; saving on every hover step would mean rewriting
+    /// settings.json dozens of times per drag.
     /// </summary>
-    public void MoveRow(MetricStageRowViewModel row, int targetIndex)
+    public void MoveRowPreview(MetricStageRowViewModel row, int targetIndex)
     {
         var currentIndex = StageRows.IndexOf(row);
         if (currentIndex < 0)
@@ -532,8 +566,10 @@ public sealed class SettingsViewModel : ObservableObject
         }
 
         StageRows.Move(currentIndex, targetIndex);
-        ApplyLive();
     }
+
+    /// <summary>Persists the current row order. Called once, when a drag is dropped.</summary>
+    public void CommitRowOrder() => ApplyLive();
 
     private void ResetStagesToDefaults()
     {

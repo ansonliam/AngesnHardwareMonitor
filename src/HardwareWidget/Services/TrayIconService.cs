@@ -31,6 +31,7 @@ public sealed class TrayIconService : IDisposable
         menu.Opening += (_, _) => RefreshMenuLabels();
         menu.Items.Add(_widgetVisibilityItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add("Refresh", null, (_, _) => _controller.RefreshNow());
         menu.Items.Add("Settings", null, (_, _) => _controller.ShowSettings());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => _controller.ExitApplication());

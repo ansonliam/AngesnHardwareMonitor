@@ -5,8 +5,10 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Forms = System.Windows.Forms;
 using HardwareWidget.Services;
 using HardwareWidget.Settings;
+using HardwareWidget.ViewModels;
 
 namespace HardwareWidget.Views;
 
@@ -80,6 +82,13 @@ public partial class MainWindow : Window
         _windowSource = HwndSource.FromHwnd(handle);
         _windowSource?.AddHook(WindowMessageHook);
         DisableWindowSnapping(handle);
+
+        // Now that the monitor and its DPI are known, rescue the widget only if the saved position
+        // is genuinely off screen -- for example the display it was on has been disconnected.
+        if (EnsureOnScreen())
+        {
+            SavePlacement();
+        }
     }
 
     /// <summary>
@@ -170,6 +179,7 @@ public partial class MainWindow : Window
 
         AlwaysOnTopMenuItem.IsChecked = settings.WidgetAlwaysOnTop;
         LockWidgetMenuItem.IsChecked = settings.WidgetLocked;
+        BuildPollingIntervalMenu(settings);
 
         if (sender is not ContextMenu menu)
         {
@@ -192,6 +202,56 @@ public partial class MainWindow : Window
                 child.IsChecked = Math.Abs(tagValue - target) < 0.001;
             }
         }
+    }
+
+    /// <summary>
+    /// Fills the polling-interval submenu from the shared list of offered intervals.
+    ///
+    /// Hidden entirely in individual-interval mode: there is no single interval to pick then, and
+    /// offering one here would silently overwrite eight per-metric settings. Those stay in the
+    /// settings dialog, where all eight are visible at once.
+    /// </summary>
+    private void BuildPollingIntervalMenu(AppSettings settings)
+    {
+        if (!settings.UseUnifiedPollingInterval)
+        {
+            PollingIntervalMenuItem.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        PollingIntervalMenuItem.Visibility = Visibility.Visible;
+        PollingIntervalMenuItem.Items.Clear();
+
+        foreach (var seconds in AppSettings.OfferedIntervalSeconds)
+        {
+            var item = new MenuItem
+            {
+                Header = new PollingIntervalOption(seconds).Label,
+                IsCheckable = true,
+                IsChecked = seconds == settings.UnifiedPollingSeconds,
+                Tag = seconds.ToString(CultureInfo.InvariantCulture),
+            };
+
+            item.Click += OnPollingIntervalClick;
+            PollingIntervalMenuItem.Items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Unlike the cosmetic items on this menu, this rebuilds the polling schedule -- which is why
+    /// the settings dialog keeps it behind a Save button. Here the choice is a single deliberate
+    /// click, so applying it straight away is the expected behaviour.
+    /// </summary>
+    private void OnPollingIntervalClick(object sender, RoutedEventArgs eventArgs)
+    {
+        if (sender is not MenuItem item
+            || !TryGetTag(item, out var seconds)
+            || !AppSettings.IsValidInterval((int)seconds))
+        {
+            return;
+        }
+
+        Mutate(settings => settings.UnifiedPollingSeconds = (int)seconds);
     }
 
     private void OnTextScaleClick(object sender, RoutedEventArgs eventArgs)
@@ -306,6 +366,14 @@ public partial class MainWindow : Window
 
     // -------------------------------------------------------------- placement
 
+    /// <summary>
+    /// Restores the saved position verbatim. It is deliberately not clamped here: the only bounds
+    /// available this early are SystemParameters.WorkArea, which describes the *primary* monitor
+    /// only, so clamping to it dragged a widget parked on any other monitor back onto the primary
+    /// one at every restart -- which is what made the widget appear to move on its own. Bounds
+    /// checking happens in <see cref="EnsureOnScreen"/> once there is a handle to ask which monitor
+    /// the window is actually on.
+    /// </summary>
     private void RestorePlacement(AppSettings settings)
     {
         _restoringPlacement = true;
@@ -314,24 +382,98 @@ public partial class MainWindow : Window
             Width = settings.WidgetWidth;
             Height = settings.WidgetHeight;
 
+            if (settings.WidgetLeft is { } savedLeft && double.IsFinite(savedLeft)
+                && settings.WidgetTop is { } savedTop && double.IsFinite(savedTop))
+            {
+                Left = savedLeft;
+                Top = savedTop;
+                return;
+            }
+
+            // Never positioned: park it near the top-right of the primary monitor on first run.
+            // The primary monitor is the right assumption here precisely because there is no saved
+            // position to respect.
             var workArea = SystemParameters.WorkArea;
-
-            // Null means "never positioned"; park it near the top-right corner on first run.
-            var left = settings.WidgetLeft is { } savedLeft && double.IsFinite(savedLeft)
-                ? savedLeft
-                : workArea.Right - Width - 24;
-            var top = settings.WidgetTop is { } savedTop && double.IsFinite(savedTop)
-                ? savedTop
-                : workArea.Top + 24;
-
-            // Guard against a saved position on a monitor that is no longer attached.
-            Left = Math.Clamp(left, workArea.Left - (Width / 2), workArea.Right - 40);
-            Top = Math.Clamp(top, workArea.Top, workArea.Bottom - 40);
+            Left = workArea.Right - Width - 24;
+            Top = workArea.Top + 24;
         }
         finally
         {
             _restoringPlacement = false;
         }
+    }
+
+    /// <summary>
+    /// Pulls the widget back on screen only if it is genuinely off it, measuring against the bounds
+    /// of the monitor it is on rather than the primary monitor's work area.
+    ///
+    /// Screen *bounds*, not the work area, so parking the widget against or partly beneath the
+    /// taskbar stays possible -- the same choice the AI Usage Monitor makes. Returns true if it
+    /// moved anything, so the caller can persist the correction; an unsaved correction is what makes
+    /// a widget reappear somewhere other than where it was left.
+    /// </summary>
+    private bool EnsureOnScreen()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !double.IsFinite(Left) || !double.IsFinite(Top))
+        {
+            return false;
+        }
+
+        var bounds = Forms.Screen.FromHandle(handle).Bounds;
+
+        // Screen bounds are physical pixels; Left/Top are DIPs. Without this transform the
+        // comparison is wrong on any display that is not at 100% scaling.
+        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
+            ?? Matrix.Identity;
+        var topLeft = transform.Transform(new Point(bounds.Left, bounds.Top));
+        var bottomRight = transform.Transform(new Point(bounds.Right, bounds.Bottom));
+
+        var width = double.IsFinite(Width) ? Width : ActualWidth;
+        var height = double.IsFinite(Height) ? Height : ActualHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        var changed = false;
+
+        // A widget bigger than the screen can never sit fully on it; trim it first.
+        if (height > bottomRight.Y - topLeft.Y)
+        {
+            height = Math.Max(MinHeight, bottomRight.Y - topLeft.Y);
+            Height = height;
+            changed = true;
+        }
+
+        if (width > bottomRight.X - topLeft.X)
+        {
+            width = Math.Max(MinWidth, bottomRight.X - topLeft.X);
+            Width = width;
+            changed = true;
+        }
+
+        var left = Math.Clamp(Left, topLeft.X, Math.Max(topLeft.X, bottomRight.X - width));
+        var top = Math.Clamp(Top, topLeft.Y, Math.Max(topLeft.Y, bottomRight.Y - height));
+
+        if (Math.Abs(left - Left) > 0.5)
+        {
+            Left = left;
+            changed = true;
+        }
+
+        if (Math.Abs(top - Top) > 0.5)
+        {
+            Top = top;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            AppLog.Info($"Widget was off screen; moved to {Left:0},{Top:0} ({Width:0}x{Height:0}).");
+        }
+
+        return changed;
     }
 
     private void QueuePlacementSave()

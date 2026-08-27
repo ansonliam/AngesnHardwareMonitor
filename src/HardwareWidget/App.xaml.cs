@@ -51,7 +51,7 @@ public partial class App : Application, IApplicationController
         _scheduler = new HardwareMonitorScheduler(_monitor, _history, _settings);
 
         _widget = new MainWindow(_settings);
-        _mainViewModel = new MainViewModel(_settings, Dispatcher, ShowSettings, ExitApplication);
+        _mainViewModel = new MainViewModel(_settings, Dispatcher, ShowSettings, RefreshNow, ExitApplication);
         _widget.DataContext = _mainViewModel;
         MainWindow = _widget;
         _widget.Show();
@@ -63,6 +63,10 @@ public partial class App : Application, IApplicationController
         _tray.Initialize();
 
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+
+        // If startup is enabled but the task points at an older location (rebuilt or moved app),
+        // repoint it. Cheap, idempotent, and it stops "start with Windows" silently rotting.
+        new WindowsStartupService().EnsurePathCurrent();
 
         _ = InitializeHistoryAsync();
         _scheduler.Start();
@@ -103,6 +107,8 @@ public partial class App : Application, IApplicationController
     });
 
     public void HideWidget() => Dispatcher.BeginInvoke(() => _widget?.Hide());
+
+    public void RefreshNow() => _scheduler?.RequestImmediateRead();
 
     public void ShowSettings() => Dispatcher.BeginInvoke(() =>
     {

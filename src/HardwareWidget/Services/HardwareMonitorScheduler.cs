@@ -32,6 +32,13 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     private readonly ISystemIdleTimeProvider _idleTime;
     private readonly SemaphoreSlim _restartGate = new(1, 1);
 
+    /// <summary>
+    /// Signalled to wake the loop out of its sleep early. A flag alone is not enough: with a 5
+    /// minute interval the loop can be parked in a 5 minute wait, and a manual refresh has to take
+    /// effect now rather than whenever that wait happens to expire.
+    /// </summary>
+    private readonly SemaphoreSlim _wake = new(0);
+
     private CancellationTokenSource? _cancellation;
     private Task? _loop;
     private bool _disposed;
@@ -39,6 +46,10 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     /// <summary>Set when a resume from sleep is observed, so the next cycle rediscovers sensors
     /// before reading and then reads immediately.</summary>
     private volatile bool _rediscoveryRequested;
+
+    /// <summary>Set by a manual Refresh, so the next cycle samples every metric regardless of when
+    /// each was next due.</summary>
+    private volatile bool _immediateReadRequested;
 
     public HardwareMonitorScheduler(
         IHardwareMonitorService monitor,
@@ -105,7 +116,35 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     }
 
     /// <summary>Asks the next cycle to rediscover sensors first. Used on resume from sleep.</summary>
-    public void RequestRediscovery() => _rediscoveryRequested = true;
+    public void RequestRediscovery()
+    {
+        _rediscoveryRequested = true;
+        Wake();
+    }
+
+    /// <summary>
+    /// Samples every metric as soon as possible, without waiting for anything to fall due. Backs
+    /// the Refresh action on the widget's menu and the tray icon.
+    /// </summary>
+    public void RequestImmediateRead()
+    {
+        _immediateReadRequested = true;
+        Wake();
+    }
+
+    private void Wake()
+    {
+        try
+        {
+            _wake.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -125,6 +164,7 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
         {
             _restartGate.Release();
             _restartGate.Dispose();
+            _wake.Dispose();
         }
     }
 
@@ -169,6 +209,12 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
         var idleThreshold = TimeSpan.FromSeconds(settings.IdleAfterSeconds);
         var wasIdle = false;
 
+        // The wake signal outlives individual loops, so drop any counts left over from the previous
+        // one. A stale count would only cost one wasted wake-up, but starting clean is clearer.
+        while (_wake.Wait(0))
+        {
+        }
+
         while (!cancellationToken.IsCancellationRequested)
         {
             if (_rediscoveryRequested)
@@ -181,6 +227,17 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 {
                     dueAt[metric] = 0L;
                 }
+            }
+
+            if (_immediateReadRequested)
+            {
+                _immediateReadRequested = false;
+
+                // A one-off read that deliberately leaves dueAt alone. Marking everything due
+                // instead would restart every metric's countdown from the moment of the refresh,
+                // so repeatedly pressing Refresh would drag the whole cadence along with it. The
+                // schedule is the user's setting; a manual refresh is not a reschedule.
+                await RunCycleAsync(HardwareMetrics.All, cancellationToken).ConfigureAwait(false);
             }
 
             // Intervals are resolved per cycle rather than once up front, because the idle
@@ -248,7 +305,10 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(delay), cancellationToken).ConfigureAwait(false);
+                    // Waiting on the signal rather than Task.Delay is what lets Refresh, a resume
+                    // from sleep, or a settings change cut the sleep short.
+                    await _wake.WaitAsync(TimeSpan.FromMilliseconds(delay), cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

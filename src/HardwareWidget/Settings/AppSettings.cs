@@ -50,6 +50,12 @@ public sealed class AppSettings
 
     public static IReadOnlyList<string> TextWeightChoices { get; } = ["Normal", "SemiBold", "Bold"];
 
+    /// <summary>
+    /// Active polling intervals offered in the UI, in dropdown order. Shared by the settings dialog
+    /// and the widget's right-click menu.
+    /// </summary>
+    public static IReadOnlyList<int> OfferedIntervalSeconds { get; } = [5, 10, 30, 60, 120, 300];
+
     public bool UseUnifiedPollingInterval { get; set; } = true;
 
     public int UnifiedPollingSeconds { get; set; } = DefaultPollingSeconds;

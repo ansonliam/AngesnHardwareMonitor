@@ -128,6 +128,24 @@ A temperature sensor reporting exactly `0.00` is treated as unavailable rather t
 measurement, since a powered-on part is never at freezing point. Fan RPM deliberately does not get
 that rule, because `0` RPM is genuine in zero-fan idle mode.
 
+## Start with Windows
+
+Settings offers **Start with Windows**, which registers a Scheduled Task (`HardwareWidget.Startup`)
+with an at-logon trigger, a ~10 second delay, and `RunLevel = HighestAvailable`.
+
+The `HKCU\...\Run` key is deliberately not used. It cannot launch an elevated process — nothing at
+logon can answer a UAC prompt on the user's behalf — and this app requires administrator rights for
+its sensor driver.
+
+A useful side effect: a task registered this way starts the widget elevated **with no UAC prompt**,
+which a shortcut cannot do. It does not bypass anything else, though — Defender, the
+vulnerable-driver blocklist and SmartScreen all still apply, so it has no bearing on whether
+WinRing0 loads.
+
+The task is the single source of truth for whether startup is enabled; nothing is mirrored into
+`settings.json`, so the two cannot disagree. If the executable moves, the app repoints the task at
+its own path on next launch.
+
 ## Build
 
 ```bash

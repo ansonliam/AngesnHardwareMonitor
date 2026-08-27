@@ -12,6 +12,9 @@ public interface IApplicationController
 
     void HideWidget();
 
+    /// <summary>Samples every metric now, rather than waiting for the next scheduled cycle.</summary>
+    void RefreshNow();
+
     void ShowSettings();
 
     /// <summary>Named to avoid colliding with WPF's Application.Exit event.</summary>

@@ -30,7 +30,12 @@ public sealed class MainViewModel : ObservableObject
     private double? _gpuMemoryTemperature;
     private double? _gpuFanRpm;
 
-    public MainViewModel(SettingsService settings, Dispatcher dispatcher, Action openSettings, Action exit)
+    public MainViewModel(
+        SettingsService settings,
+        Dispatcher dispatcher,
+        Action openSettings,
+        Action refresh,
+        Action exit)
     {
         _settings = settings;
         _dispatcher = dispatcher;
@@ -38,6 +43,7 @@ public sealed class MainViewModel : ObservableObject
         _palette = new MetricStagePalette(_current);
 
         OpenSettingsCommand = new RelayCommand(openSettings);
+        RefreshCommand = new RelayCommand(refresh);
         ExitCommand = new RelayCommand(exit);
 
         _tiles = new Dictionary<HardwareMetrics, MetricTileViewModel>
@@ -62,6 +68,9 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<MetricTileViewModel> Metrics { get; }
 
     public RelayCommand OpenSettingsCommand { get; }
+
+    /// <summary>Forces an immediate sample of every metric.</summary>
+    public RelayCommand RefreshCommand { get; }
 
     public RelayCommand ExitCommand { get; }
 
