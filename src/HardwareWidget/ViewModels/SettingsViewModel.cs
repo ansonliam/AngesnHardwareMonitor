@@ -21,6 +21,25 @@ public sealed record PollingIntervalOption(int Seconds)
 }
 
 /// <summary>
+/// One entry in the "consider idle after" ComboBox. Held as seconds to match what is persisted,
+/// but shown in minutes above the shortest choice, which is the unit that reads naturally for an
+/// idle threshold -- "5 minutes" rather than "300 seconds".
+/// </summary>
+public sealed record IdleAfterOption(int Seconds)
+{
+    public string Label =>
+        // The shortest choice reads better as "60 seconds" than "1 minute"; everything above it is
+        // phrased in minutes. A hand-edited value that is not a whole number of minutes also falls
+        // back to seconds, which is clearer than rendering "0.75 minutes".
+        Seconds < 120 || Seconds % 60 != 0
+            ? $"{Seconds} seconds"
+            : $"{Seconds / 60} minutes";
+
+    /// <summary>The ComboBox template formats items via ToString(); see PollingIntervalOption.</summary>
+    public override string ToString() => Label;
+}
+
+/// <summary>
 /// The settings dialog, split into two kinds of setting.
 ///
 /// Appearance and colour stages apply live: they are cosmetic, the widget is visible next to the
@@ -35,7 +54,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     // Idle cadences are allowed to be much longer than active ones, so they get their own lists.
     private static readonly int[] OfferedIdleSeconds = [10, 30, 60, 120, 300, 600, 900, 1800, 3600];
-    private static readonly int[] OfferedIdleAfterSeconds = [30, 60, 120, 300, 600, 900, 1800, 3600];
+    private static readonly int[] OfferedIdleAfterSeconds = [60, 120, 300, 600, 900, 1800, 3600];
 
     private readonly SettingsService _settings;
 
@@ -49,7 +68,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _collectHistory;
     private bool _useUnifiedPollingInterval;
     private bool _useIdlePolling;
-    private PollingIntervalOption _idleAfter;
+    private IdleAfterOption _idleAfter;
     private PollingIntervalOption _idleUnifiedInterval;
     private PollingIntervalOption _idleCpuTemperatureInterval;
     private PollingIntervalOption _idleCpuUsageInterval;
@@ -100,13 +119,13 @@ public sealed class SettingsViewModel : ObservableObject
                 .OrderBy(value => value)
                 .Select(value => new PollingIntervalOption(value)));
 
-        IdleAfterOptions = new ObservableCollection<PollingIntervalOption>(
+        IdleAfterOptions = new ObservableCollection<IdleAfterOption>(
             OfferedIdleAfterSeconds
                 .Append(current.IdleAfterSeconds)
                 .Where(AppSettings.IsValidIdleAfter)
                 .Distinct()
                 .OrderBy(value => value)
-                .Select(value => new PollingIntervalOption(value)));
+                .Select(value => new IdleAfterOption(value)));
 
         _widgetAppearance = current.WidgetAppearance;
         _widgetFont = current.WidgetFont;
@@ -126,7 +145,7 @@ public sealed class SettingsViewModel : ObservableObject
         _gpuFanInterval = Option(current.GpuFanPollingSeconds);
 
         _useIdlePolling = current.UseIdlePolling;
-        _idleAfter = IdleAfterOption(current.IdleAfterSeconds);
+        _idleAfter = ResolveIdleAfter(current.IdleAfterSeconds);
         _idleUnifiedInterval = IdleOption(current.IdleUnifiedPollingSeconds);
         _idleCpuTemperatureInterval = IdleOption(current.IdleCpuTemperaturePollingSeconds);
         _idleCpuUsageInterval = IdleOption(current.IdleCpuUsagePollingSeconds);
@@ -178,7 +197,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public ObservableCollection<PollingIntervalOption> IdleIntervalOptions { get; }
 
-    public ObservableCollection<PollingIntervalOption> IdleAfterOptions { get; }
+    public ObservableCollection<IdleAfterOption> IdleAfterOptions { get; }
 
     /// <summary>Five-stage thresholds, one row per displayed metric.</summary>
     public ObservableCollection<MetricStageRowViewModel> StageRows { get; }
@@ -293,7 +312,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public bool IdleIndividualVisible => UseIdlePolling && !UseUnifiedPollingInterval;
 
-    public PollingIntervalOption IdleAfter
+    public IdleAfterOption IdleAfter
     {
         get => _idleAfter;
         set => SetPending(ref _idleAfter, value);
@@ -613,7 +632,7 @@ public sealed class SettingsViewModel : ObservableObject
         IdleIntervalOptions.FirstOrDefault(option => option.Seconds == seconds)
         ?? IdleIntervalOptions.First(option => option.Seconds == AppSettings.DefaultIdlePollingSeconds);
 
-    private PollingIntervalOption IdleAfterOption(int seconds) =>
+    private IdleAfterOption ResolveIdleAfter(int seconds) =>
         IdleAfterOptions.FirstOrDefault(option => option.Seconds == seconds)
         ?? IdleAfterOptions.First(option => option.Seconds == AppSettings.DefaultIdleAfterSeconds);
 }
