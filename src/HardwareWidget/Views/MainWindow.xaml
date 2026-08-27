@@ -1,0 +1,110 @@
+﻿<Window x:Class="HardwareWidget.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:HardwareWidget.Controls"
+        xmlns:vm="clr-namespace:HardwareWidget.ViewModels"
+        Title="Hardware Widget"
+        AllowsTransparency="True"
+        Background="#01000000"
+        Icon="/HardwareWidget;component/Assets/HardwareWidget.ico"
+        MinWidth="130"
+        MinHeight="70"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        SizeToContent="Manual"
+        Topmost="True"
+        WindowStartupLocation="Manual"
+        WindowStyle="None">
+
+    <!-- Background is #01000000 (alpha 1/255) rather than Transparent, the same trick the AI Usage
+         Monitor's taskbar widget uses: this is a layered window, and Windows routes mouse input
+         *through* pixels whose alpha is zero, so a fully transparent margin would hand drags and
+         right-clicks to whatever sits underneath. Alpha 1 is visually indistinguishable but
+         hit-testable. -->
+
+    <Border Background="{DynamicResource WidgetCardBackground}"
+            BorderBrush="{DynamicResource WidgetCardBorderBrush}"
+            BorderThickness="{DynamicResource WidgetCardBorderThickness}"
+            CornerRadius="{DynamicResource WidgetCardCornerRadius}"
+            SnapsToDevicePixels="True">
+
+        <!-- Same shape as the AI Usage Monitor's widget menu, including its rule that Exit lives only
+             on the tray icon: it must not sit where someone aiming to dismiss the widget can hit it. -->
+        <Border.ContextMenu>
+            <ContextMenu Opened="OnContextMenuOpened">
+                <MenuItem Command="{Binding OpenSettingsCommand}" Header="Settings" />
+                <Separator />
+                <MenuItem Header="Text size">
+                    <MenuItem Click="OnTextScaleClick" Header="Small" Tag="0.85" IsCheckable="True" />
+                    <MenuItem Click="OnTextScaleClick" Header="Normal" Tag="1.0" IsCheckable="True" />
+                    <MenuItem Click="OnTextScaleClick" Header="Large" Tag="1.15" IsCheckable="True" />
+                    <MenuItem Click="OnTextScaleClick" Header="Larger" Tag="1.3" IsCheckable="True" />
+                    <MenuItem Click="OnTextScaleClick" Header="Largest" Tag="1.5" IsCheckable="True" />
+                </MenuItem>
+                <MenuItem Header="Opacity">
+                    <MenuItem Click="OnOpacityClick" Header="100%" Tag="1.0" IsCheckable="True" />
+                    <MenuItem Click="OnOpacityClick" Header="90%" Tag="0.9" IsCheckable="True" />
+                    <MenuItem Click="OnOpacityClick" Header="80%" Tag="0.8" IsCheckable="True" />
+                    <MenuItem Click="OnOpacityClick" Header="70%" Tag="0.7" IsCheckable="True" />
+                    <MenuItem Click="OnOpacityClick" Header="60%" Tag="0.6" IsCheckable="True" />
+                </MenuItem>
+                <Separator />
+                <MenuItem x:Name="AlwaysOnTopMenuItem"
+                          Click="OnAlwaysOnTopClick"
+                          Header="Always on Top"
+                          IsCheckable="True" />
+                <MenuItem x:Name="LockWidgetMenuItem"
+                          Click="OnLockClick"
+                          Header="Lock Position"
+                          IsCheckable="True" />
+                <Separator />
+                <MenuItem Click="OnHideClick" Header="Hide Widget" />
+            </ContextMenu>
+        </Border.ContextMenu>
+
+        <!-- Margin leaves the 7px edge band that WM_NCHITTEST claims for resizing, so grabbing an
+             edge resizes instead of landing on a metric row. Nothing else is in here: no title and
+             no gear, so the card is only the readout. Settings is on the right-click menu and the
+             tray icon. -->
+        <ItemsControl Margin="10,8,10,8"
+                      Focusable="False"
+                      ItemsSource="{Binding Metrics}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <controls:MetricColumnsPanel ColumnSpacing="16"
+                                                 MinimumColumnWidth="{DynamicResource WidgetMinimumColumnWidth}" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:MetricTileViewModel}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   FontFamily="{DynamicResource WidgetFontFamily}"
+                                   FontSize="{DynamicResource WidgetLabelFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WidgetLabelBrush}"
+                                   Margin="0,0,10,0"
+                                   Opacity="0.7"
+                                   Text="{Binding Label}"
+                                   VerticalAlignment="Center" />
+
+                        <TextBlock Grid.Column="1"
+                                   FontFamily="{DynamicResource WidgetValueFontFamily}"
+                                   FontSize="{DynamicResource WidgetValueFontSize}"
+                                   FontWeight="{DynamicResource WidgetValueFontWeight}"
+                                   Foreground="{Binding ValueBrush}"
+                                   HorizontalAlignment="Right"
+                                   Text="{Binding Display}"
+                                   TextTrimming="None"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Border>
+</Window>

@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# Local settings
+.claude/settings.local.json

@@ -1,0 +1,42 @@
+﻿<Application x:Class="HardwareWidget.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Teal.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Same shell conventions as the AI Usage Monitor: MahApps Dark.Teal, Segoe UI
+                 Variable Text, compact buttons. -->
+            <Style TargetType="Window">
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.ThemeBackground}" />
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}" />
+                <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            </Style>
+            <Style TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button}">
+                <Setter Property="Padding" Value="9,3" />
+                <Setter Property="MinHeight" Value="24" />
+            </Style>
+
+            <!-- The widget's readout: a label column and a right-aligned value column. -->
+            <Style x:Key="MetricLabel" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Opacity" Value="0.65" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,2,10,2" />
+            </Style>
+            <Style x:Key="MetricValue" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, Segoe UI Mono" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,2,0,2" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
