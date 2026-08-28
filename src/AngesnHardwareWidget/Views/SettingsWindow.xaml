@@ -188,12 +188,14 @@
                 </Grid>
 
                 <!--
-                    Six real columns (label, box) x3 rather than three stacked label+box pairs: a
-                    StackPanel per pair let each pair's box drift left or right depending on that
-                    pair's own label width, so boxes in different rows never lined up. Shared Auto
-                    columns force every label column to the width of its longest label and every
-                    box under the one above it, and the narrower CompactNumberBox keeps three pairs
-                    from crowding the row.
+                    Three separate Grids (one per field group), each followed by its own plain
+                    HintText outside the Grid, rather than one Grid holding all three groups plus
+                    their explanations. A TextBlock spanning several Auto columns forces WPF to
+                    measure it at its full, unwrapped width to decide how wide those columns need
+                    to be, so a whole paragraph living inside the Grid ballooned every column out to
+                    fit one line of text, pushing "Value width" and "Min width (RAM)" off the right
+                    edge of the dialog entirely. Kept outside the Grid, each hint is free to wrap
+                    against the StackPanel's real width instead.
                 -->
                 <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
@@ -206,121 +208,103 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
 
                     <TextBlock
-                        Grid.Row="0"
                         Grid.Column="0"
-                        Margin="0,0,8,8"
+                        Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Label width" />
                     <TextBox
-                        Grid.Row="0"
                         Grid.Column="1"
-                        Margin="0,0,0,8"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetLabelColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Row="0"
                         Grid.Column="3"
-                        Margin="0,0,8,8"
+                        Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph width" />
                     <TextBox
-                        Grid.Row="0"
                         Grid.Column="4"
-                        Margin="0,0,0,8"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Row="0"
                         Grid.Column="6"
-                        Margin="0,0,8,8"
+                        Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Value width" />
                     <TextBox
-                        Grid.Row="0"
                         Grid.Column="7"
-                        Margin="0,0,0,8"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetValueColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
 
-                    <!--
-                        Each numeric section gets its own explanation directly beneath it (spanning
-                        every column) rather than one paragraph at the bottom covering three
-                        unrelated ideas: pixel widths, graph stretching and column folding are easy
-                        to conflate when they are only explained together, far from the boxes they
-                        describe.
-                    -->
-                    <TextBlock
-                        Grid.Row="1"
-                        Grid.Column="0"
-                        Grid.ColumnSpan="8"
-                        Margin="0,0,0,10"
-                        Style="{StaticResource HintText}"
-                        Text="These three are pixel sizes for the label, graph and value columns of every row. Enter * instead of a number to let that column take up whatever the other two leave unused -- Value width does this by default." />
+                <TextBlock
+                    Margin="0,4,0,0"
+                    Style="{StaticResource HintText}"
+                    Text="These three are pixel sizes for the label, graph and value columns of every row. Enter * instead of a number to let that column take up whatever the other two leave unused -- Value width does this by default." />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
                     <TextBlock
-                        Grid.Row="2"
                         Grid.Column="0"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph min height" />
                     <TextBox
-                        Grid.Row="2"
                         Grid.Column="1"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphHeightMinimumText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Row="2"
                         Grid.Column="3"
-                        Margin="0,0,8,8"
+                        Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph max height" />
                     <TextBox
-                        Grid.Row="2"
                         Grid.Column="4"
-                        Margin="0,0,0,8"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphHeightMaximumText, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+
+                <TextBlock
+                    Margin="0,4,0,0"
+                    Style="{StaticResource HintText}"
+                    Text="The graph has no fixed height of its own: it stretches to fill its row, and these two just bound how far it can stretch." />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
                     <TextBlock
-                        Grid.Row="3"
-                        Grid.Column="0"
-                        Grid.ColumnSpan="8"
-                        Margin="0,0,0,10"
-                        Style="{StaticResource HintText}"
-                        Text="The graph has no fixed height of its own: it stretches to fill its row, and these two just bound how far it can stretch." />
-
-                    <TextBlock
-                        Grid.Row="4"
                         Grid.Column="0"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Min column width" />
                     <TextBox
-                        Grid.Row="4"
                         Grid.Column="1"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetMinimumColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Row="4"
                         Grid.Column="3"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Min width (RAM)" />
                     <TextBox
-                        Grid.Row="4"
                         Grid.Column="4"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetMinimumColumnWidthWithRamText, UpdateSourceTrigger=PropertyChanged}" />
@@ -334,7 +318,7 @@
                     is shown, since that wider text needs more room before another column is worth it.
                 -->
                 <TextBlock
-                    Margin="0,2,0,0"
+                    Margin="0,4,0,0"
                     Style="{StaticResource HintText}"
                     Text="Min column width / Min width (RAM): when the widget is wide enough to lay its metrics out in more than one side-by-side column, this is how narrow each of those columns may get before it folds back down to fewer." />
 
