@@ -9,7 +9,8 @@ Pairs with [AI Usage Monitor](https://github.com/ansonliam/AIUsageMonitor), a si
 tracking Codex, Claude Code, Antigravity and Cursor usage and reset times — same widget shape,
 same appearance options, side by side on the desktop.
 
-<img width="615" height="312" alt="image" src="https://github.com/user-attachments/assets/73161103-ead0-4bcb-85b4-23edcb05c746" />
+<img width="615" height="309" alt="image" src="https://github.com/user-attachments/assets/4a429af6-bae9-4de2-90fa-3e551b5eb7ae" />
+
 
 
 ## Metrics
