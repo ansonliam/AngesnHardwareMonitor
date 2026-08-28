@@ -1,0 +1,221 @@
+name: Build and release
+
+on:
+  # GitHub Actions cron is UTC: 19:17 UTC is 5:17 AM AEST / 6:17 AM AEDT.
+  # Avoid minute 0 because GitHub warns scheduled runs can be delayed or dropped
+  # during the high-load period at the start of each hour.
+  # Scheduled workflows always use the latest commit on the default branch (main).
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-and-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-for-new-release:
+    runs-on: windows-latest
+    outputs:
+      should-build: ${{ steps.release-check.outputs.should-build }}
+    steps:
+      - name: Check whether main has changed since the latest release
+        id: release-check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Manual runs are the explicit escape hatch: build and publish even if the commit is
+          # already the latest release. Scheduled runs only spend a runner when main has changed.
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch')
+          {
+              'should-build=true' >> $env:GITHUB_OUTPUT
+              exit 0
+          }
+
+          $latestReleaseCommit = gh release view --repo $env:GITHUB_REPOSITORY --json targetCommitish --jq .targetCommitish 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $latestReleaseCommit)
+          {
+              # The first scheduled release has nothing to compare against.
+              'should-build=true' >> $env:GITHUB_OUTPUT
+              exit 0
+          }
+
+          $shouldBuild = ($latestReleaseCommit.Trim() -ne $env:GITHUB_SHA).ToString().ToLowerInvariant()
+          "should-build=$shouldBuild" >> $env:GITHUB_OUTPUT
+
+  build-and-test:
+    needs: check-for-new-release
+    if: needs.check-for-new-release.outputs.should-build == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.303
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet restore ./src/AngesnHardwareWidget.slnx
+          dotnet build ./src/AngesnHardwareWidget.slnx --configuration Release --no-restore -m:1
+
+  publish-release:
+    needs: [check-for-new-release, build-and-test]
+    # A manual dispatch is deliberately retained for an on-demand release.
+    if: github.ref == 'refs/heads/main' && needs.check-for-new-release.outputs.should-build == 'true' && needs.build-and-test.result == 'success'
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.303
+
+      - name: Compute release version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # VERSION holds the MAJOR.MINOR prefix. Bump it (e.g. 1.0 -> 1.1) in the same commit as a
+          # fix to flag that release as critical - the client treats any release whose Major.Minor
+          # moved past the previous one it saw as critical, and checks daily instead of weekly for
+          # those. The patch number restarts at 0 for a new prefix (v1.0.62 -> v1.1.0), same as
+          # ordinary semver, rather than carrying on from a global build counter.
+          $minorVersion = (Get-Content -LiteralPath ./VERSION -Raw).Trim()
+          if ($minorVersion -notmatch '^\d+\.\d+$')
+          {
+              throw "VERSION must contain a MAJOR.MINOR value, e.g. 1.0."
+          }
+
+          $prefix = "v$minorVersion."
+          $existingTags = gh release list --repo $env:GITHUB_REPOSITORY --limit 1000 --json tagName --jq '.[].tagName' 2>$null
+          $existingPatches = $existingTags |
+              Where-Object { $_ -like "$prefix*" } |
+              ForEach-Object { $_.Substring($prefix.Length) } |
+              Where-Object { $_ -match '^\d+$' } |
+              ForEach-Object { [int]$_ }
+          $nextPatch = if ($existingPatches) { ($existingPatches | Measure-Object -Maximum).Maximum + 1 } else { 0 }
+
+          "RELEASE_TAG=$prefix$nextPatch" >> $env:GITHUB_ENV
+          "RELEASE_VERSION=$minorVersion.$nextPatch" >> $env:GITHUB_ENV
+
+      - name: Publish single-file application
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          $version = $env:RELEASE_VERSION
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$' -or $version -notmatch '^\d+\.\d+\.\d+$')
+          {
+              throw "Generated release version is not a semantic version."
+          }
+
+          dotnet publish ./src/AngesnHardwareWidget/AngesnHardwareWidget.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:Version=$version `
+            -p:EnableCompressionInSingleFile=true `
+            --output ./release
+
+          $executablePath = Join-Path $PWD "release/AngesnHardwareWidget.exe"
+          if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf))
+          {
+              throw "Published executable was not created."
+          }
+
+          $looseNativeLibraries = Get-ChildItem -LiteralPath ./release -Filter *.dll -File
+          if ($looseNativeLibraries)
+          {
+              $names = $looseNativeLibraries.Name -join ", "
+              throw "Single-file release left native libraries outside the executable: $names"
+          }
+
+          $hash = (Get-FileHash -LiteralPath $executablePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  AngesnHardwareWidget.exe" | Set-Content `
+            -LiteralPath ./release/AngesnHardwareWidget.exe.sha256 `
+            -Encoding ascii
+
+      - name: Create downloadable GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $title = "Angesn Hardware Widget $tag"
+          $previousTag = gh release list --repo $env:GITHUB_REPOSITORY --limit 1 --json tagName --jq '.[0].tagName' 2>$null
+          $commitRange = if ($LASTEXITCODE -eq 0 -and $previousTag)
+          {
+              "$($previousTag.Trim())..$env:GITHUB_SHA"
+          }
+          else
+          {
+              $env:GITHUB_SHA
+          }
+          # Commits that only touch README.md or the release workflow itself aren't
+          # user-facing changes, so they're left out of the published notes.
+          $excludedPaths = 'README.md', '.github/workflows/release-main.yml'
+          $commitHashes = git log $commitRange --format='%H'
+          $changeLines = foreach ($commitHash in $commitHashes)
+          {
+              $touchedFiles = git diff-tree --no-commit-id --name-only -r $commitHash
+              $isExcluded = -not ($touchedFiles | Where-Object { $excludedPaths -notcontains $_ })
+              if (-not $isExcluded)
+              {
+                  $subject = git log -1 --format='%s' $commitHash
+                  "- $subject"
+              }
+          }
+          # Native-command output is an array in PowerShell; join explicitly so Markdown receives
+          # a line break between every commit rather than a single space-separated bullet.
+          $changeTitles = $changeLines -join [Environment]::NewLine
+          if (-not $changeTitles)
+          {
+              $changeTitles = '- No code changes since the previous release.'
+          }
+          $notes = @"
+          Windows x64 release $tag.
+
+          ## Changes
+          $changeTitles
+
+          This executable is unsigned, so Windows SmartScreen may show an Unknown publisher warning.
+          It also requires administrator rights to read CPU/GPU sensors, so Windows will prompt for
+          elevation on launch.
+          "@
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0)
+          {
+              gh release upload $tag `
+                ./release/AngesnHardwareWidget.exe `
+                ./release/AngesnHardwareWidget.exe.sha256 `
+                --repo $env:GITHUB_REPOSITORY `
+                --clobber
+          }
+          else
+          {
+              gh release create $tag `
+                ./release/AngesnHardwareWidget.exe `
+                ./release/AngesnHardwareWidget.exe.sha256 `
+                --repo $env:GITHUB_REPOSITORY `
+                --target $env:GITHUB_SHA `
+                --title $title `
+                --notes $notes `
+                --latest
+          }
