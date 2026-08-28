@@ -18,6 +18,7 @@
     Background="#01000000"
     Icon="/AngesnHardwareWidget;component/Assets/AngesnHardwareWidget.ico"
     ResizeMode="CanResize"
+    ShowActivated="False"
     ShowInTaskbar="False"
     SizeToContent="Manual"
     Topmost="True"

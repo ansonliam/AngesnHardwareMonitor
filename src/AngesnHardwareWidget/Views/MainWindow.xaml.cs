@@ -36,7 +36,17 @@ public partial class MainWindow : Window
 
     // Window style bits, used to opt the widget out of Aero Snap.
     private const int GwlStyle = -16;
+    private const int GwlExStyle = -20;
     private const int WsMaximizeBox = 0x00010000;
+    private const int WsExToolWindow = 0x00000080;
+    private const int WsExAppWindow = 0x00040000;
+    private const int WsExNoActivate = 0x08000000;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
+    private const uint SwpNoOwnerZOrder = 0x0200;
 
     private readonly SettingsService _settings;
     private readonly DispatcherTimer _placementSaveTimer;
@@ -103,6 +113,7 @@ public partial class MainWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         _windowSource = HwndSource.FromHwnd(handle);
         _windowSource?.AddHook(WindowMessageHook);
+        ApplyNonActivatingToolWindowStyle(handle);
         DisableWindowSnapping(handle);
 
         // Now that the monitor and its DPI are known, rescue the widget only if the saved position
@@ -135,6 +146,38 @@ public partial class MainWindow : Window
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint flags);
+
+    /// <summary>Keeps this independent popup out of Alt+Tab without assigning an Explorer owner.
+    /// Refreshing the frame with SWP_NOACTIVATE also guarantees the style change cannot steal focus.</summary>
+    private static void ApplyNonActivatingToolWindowStyle(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var style = GetWindowLong(handle, GwlExStyle);
+        var updated = (style | WsExToolWindow | WsExNoActivate) & ~WsExAppWindow;
+        SetWindowLong(handle, GwlExStyle, updated);
+        SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder | SwpFrameChanged);
+    }
 
     /// <summary>
     /// Claims a border band on all four edges for resizing. WindowStyle="None" removes the frame
