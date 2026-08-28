@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -44,7 +45,22 @@ public partial class MainWindow : Window
     private bool _restoringPlacement;
     private bool _locked;
 
-    public MainWindow(SettingsService settings)
+    /// <summary>Used only by the XAML Designer. The unique nonexistent settings path prevents the
+    /// designer from reading or writing the user's real settings.</summary>
+    public MainWindow()
+        : this(
+            new SettingsService(Path.Combine(
+                Path.GetTempPath(),
+                $"AngesnHardwareWidget-designer-{Guid.NewGuid():N}.json")),
+            designMode: true)
+    {
+    }
+
+    public MainWindow(SettingsService settings) : this(settings, designMode: false)
+    {
+    }
+
+    private MainWindow(SettingsService settings, bool designMode)
     {
         _settings = settings;
         InitializeComponent();
@@ -57,6 +73,12 @@ public partial class MainWindow : Window
             _placementSaveTimer.Stop();
             SavePlacement();
         };
+
+        if (designMode)
+        {
+            ApplyAppearance(new AppSettings());
+            return;
+        }
 
         RestorePlacement(_settings.Current);
         ApplyAppearance(_settings.Current);
@@ -340,7 +362,22 @@ public partial class MainWindow : Window
 
         // The expanded RAM row ("23.2/63.9 GB (36%)") needs noticeably more room before it is
         // worth splitting into another column, and larger text needs proportionally more again.
-        Resources["WidgetMinimumColumnWidth"] = (settings.ShowRamUsedAndTotal ? 210d : 150d) * scale;
+        Resources["WidgetMinimumColumnWidth"] = (settings.ShowRamUsedAndTotal
+            ? settings.WidgetMinimumColumnWidthWithRam
+            : settings.WidgetMinimumColumnWidth) * scale;
+
+        // Fixed rather than Auto so every row's label, graph and value start at the same x; all
+        // three widths are user-adjustable in Settings, since how much room each column needs
+        // depends on the chosen font, appearance and content. Any of them can be "*" too, exactly
+        // like a Grid's own ColumnDefinition.Width, to soak up whatever the other two leave over.
+        //
+        // The value column is not here: its width can differ per row (the RAM override only widens
+        // the RAM row, not every metric's value column), so MainViewModel sets it on each tile
+        // instead of on a single shared resource.
+        Resources["WidgetLabelColumnWidth"] = ColumnWidths.Parse(settings.WidgetLabelColumnWidth, scale);
+        Resources["WidgetGraphColumnWidth"] = ColumnWidths.Parse(settings.WidgetGraphColumnWidth, scale);
+        Resources["WidgetGraphHeightMinimum"] = settings.WidgetGraphHeightMinimum * scale;
+        Resources["WidgetGraphHeightMaximum"] = settings.WidgetGraphHeightMaximum * scale;
 
         TextOptions.SetTextRenderingMode(this, retro ? TextRenderingMode.Aliased : TextRenderingMode.ClearType);
         TextOptions.SetTextHintingMode(this, retro ? TextHintingMode.Fixed : TextHintingMode.Auto);

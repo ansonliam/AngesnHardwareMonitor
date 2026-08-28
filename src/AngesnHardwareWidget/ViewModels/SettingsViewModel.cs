@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using AngesnHardwareWidget.Models;
 using AngesnHardwareWidget.Services;
@@ -59,10 +60,25 @@ public sealed class SettingsViewModel : ObservableObject
     private string _widgetFont;
     private string _widgetTextWeight;
     private bool _showRamUsedAndTotal;
+    private string _widgetLabelColumnWidth;
+    private string _widgetGraphColumnWidth;
+    private string _widgetValueColumnWidth;
+    private string _widgetValueColumnWidthWithRam;
+    private string _widgetLabelColumnWidthText;
+    private string _widgetGraphColumnWidthText;
+    private string _widgetValueColumnWidthText;
+    private string _widgetValueColumnWidthWithRamText;
+    private double _widgetGraphHeightMinimum;
+    private double _widgetGraphHeightMaximum;
+    private string _widgetGraphHeightMinimumText;
+    private string _widgetGraphHeightMaximumText;
+    private double _widgetMinimumColumnWidth;
+    private double _widgetMinimumColumnWidthWithRam;
+    private string _widgetMinimumColumnWidthText;
+    private string _widgetMinimumColumnWidthWithRamText;
     private bool _startWithWindows;
 
     // Pending section, committed by Save.
-    private bool _collectHistory;
     private bool _useUnifiedPollingInterval;
     private bool _useIdlePolling;
     private PollingIntervalOption _idleAfter;
@@ -128,12 +144,27 @@ public sealed class SettingsViewModel : ObservableObject
         _widgetFont = current.WidgetFont;
         _widgetTextWeight = current.WidgetTextWeight;
         _showRamUsedAndTotal = current.ShowRamUsedAndTotal;
+        _widgetLabelColumnWidth = current.WidgetLabelColumnWidth;
+        _widgetGraphColumnWidth = current.WidgetGraphColumnWidth;
+        _widgetValueColumnWidth = current.WidgetValueColumnWidth;
+        _widgetValueColumnWidthWithRam = current.WidgetValueColumnWidthWithRam;
+        _widgetLabelColumnWidthText = current.WidgetLabelColumnWidth;
+        _widgetGraphColumnWidthText = current.WidgetGraphColumnWidth;
+        _widgetValueColumnWidthText = current.WidgetValueColumnWidth;
+        _widgetValueColumnWidthWithRamText = current.WidgetValueColumnWidthWithRam;
+        _widgetGraphHeightMinimum = current.WidgetGraphHeightMinimum;
+        _widgetGraphHeightMaximum = current.WidgetGraphHeightMaximum;
+        _widgetGraphHeightMinimumText = FormatNumber(current.WidgetGraphHeightMinimum);
+        _widgetGraphHeightMaximumText = FormatNumber(current.WidgetGraphHeightMaximum);
+        _widgetMinimumColumnWidth = current.WidgetMinimumColumnWidth;
+        _widgetMinimumColumnWidthWithRam = current.WidgetMinimumColumnWidthWithRam;
+        _widgetMinimumColumnWidthText = FormatNumber(current.WidgetMinimumColumnWidth);
+        _widgetMinimumColumnWidthWithRamText = FormatNumber(current.WidgetMinimumColumnWidthWithRam);
 
         // Read from the scheduled task rather than from settings.json: the task is the actual
         // state, so if it was removed outside the app the checkbox still tells the truth.
         _startWithWindows = _startup.IsEnabled();
 
-        _collectHistory = current.CollectHistory;
         _useUnifiedPollingInterval = current.UseUnifiedPollingInterval;
         _unifiedInterval = Option(current.UnifiedPollingSeconds);
         _cpuTemperatureInterval = Option(current.CpuTemperaturePollingSeconds);
@@ -210,6 +241,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<string> WidgetTextWeights => AppSettings.TextWeightChoices;
 
+
     public RelayCommand SaveMonitoringCommand { get; }
 
     public RelayCommand CloseCommand { get; }
@@ -271,6 +303,123 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Width of the label column, before scaling, as typed: a number of pixels, or "*" to take up
+    /// whatever the other two columns leave over. Held as text so a half-typed value does not blow
+    /// up binding; out-of-range or unparseable text is reported but not applied, leaving the last
+    /// valid width in effect.
+    /// </summary>
+    public string WidgetLabelColumnWidthText
+    {
+        get => _widgetLabelColumnWidthText;
+        set => SetColumnWidth(
+            ref _widgetLabelColumnWidthText,
+            value,
+            ref _widgetLabelColumnWidth,
+            AppSettings.MinimumLabelColumnWidth,
+            AppSettings.MaximumLabelColumnWidth,
+            "Label column width");
+    }
+
+    /// <summary>Width of the history-graph column, before scaling, as typed. See <see cref="WidgetLabelColumnWidthText"/>.</summary>
+    public string WidgetGraphColumnWidthText
+    {
+        get => _widgetGraphColumnWidthText;
+        set => SetColumnWidth(
+            ref _widgetGraphColumnWidthText,
+            value,
+            ref _widgetGraphColumnWidth,
+            AppSettings.MinimumGraphColumnWidth,
+            AppSettings.MaximumGraphColumnWidth,
+            "Graph column width");
+    }
+
+    /// <summary>Width of the value column, before scaling, as typed. See <see cref="WidgetLabelColumnWidthText"/>.</summary>
+    public string WidgetValueColumnWidthText
+    {
+        get => _widgetValueColumnWidthText;
+        set => SetColumnWidth(
+            ref _widgetValueColumnWidthText,
+            value,
+            ref _widgetValueColumnWidth,
+            AppSettings.MinimumValueColumnWidth,
+            AppSettings.MaximumValueColumnWidth,
+            "Value column width");
+    }
+
+    /// <summary>Overrides <see cref="WidgetValueColumnWidthText"/> while RAM used/total is shown. See <see cref="WidgetLabelColumnWidthText"/>.</summary>
+    public string WidgetValueColumnWidthWithRamText
+    {
+        get => _widgetValueColumnWidthWithRamText;
+        set => SetColumnWidth(
+            ref _widgetValueColumnWidthWithRamText,
+            value,
+            ref _widgetValueColumnWidthWithRam,
+            AppSettings.MinimumValueColumnWidth,
+            AppSettings.MaximumValueColumnWidth,
+            "Value column width (RAM shown)");
+    }
+
+    /// <summary>
+    /// Narrowest a metric column may get before the widget folds columns back down, as typed. No
+    /// "*" option -- this is a plain minimum, not a column width.
+    /// </summary>
+    public string WidgetMinimumColumnWidthText
+    {
+        get => _widgetMinimumColumnWidthText;
+        set => SetPixelValue(
+            ref _widgetMinimumColumnWidthText,
+            value,
+            ref _widgetMinimumColumnWidth,
+            AppSettings.MinimumMinimumColumnWidth,
+            AppSettings.MaximumMinimumColumnWidth,
+            "Minimum column width");
+    }
+
+    /// <summary>Overrides <see cref="WidgetMinimumColumnWidthText"/> while RAM used/total is shown.</summary>
+    public string WidgetMinimumColumnWidthWithRamText
+    {
+        get => _widgetMinimumColumnWidthWithRamText;
+        set => SetPixelValue(
+            ref _widgetMinimumColumnWidthWithRamText,
+            value,
+            ref _widgetMinimumColumnWidthWithRam,
+            AppSettings.MinimumMinimumColumnWidth,
+            AppSettings.MaximumMinimumColumnWidth,
+            "Minimum column width (RAM shown)");
+    }
+
+    /// <summary>
+    /// Lower bound on the graph's height, before scaling, as typed. The graph has no fixed height
+    /// of its own -- it stretches to fill its row -- so this and the maximum below are what bound
+    /// it. Held as text so a half-typed value does not blow up binding; out-of-range or
+    /// unparseable text is reported but not applied, leaving the last valid bound in effect.
+    /// </summary>
+    public string WidgetGraphHeightMinimumText
+    {
+        get => _widgetGraphHeightMinimumText;
+        set => SetPixelValue(
+            ref _widgetGraphHeightMinimumText,
+            value,
+            ref _widgetGraphHeightMinimum,
+            AppSettings.AbsoluteMinimumGraphHeight,
+            AppSettings.AbsoluteMaximumGraphHeight,
+            "Graph min height");
+    }
+
+    /// <summary>Upper bound on the graph's height, before scaling, as typed. See <see cref="WidgetGraphHeightMinimumText"/>.</summary>
+    public string WidgetGraphHeightMaximumText
+    {
+        get => _widgetGraphHeightMaximumText;
+        set => SetPixelValue(
+            ref _widgetGraphHeightMaximumText,
+            value,
+            ref _widgetGraphHeightMaximum,
+            AppSettings.AbsoluteMinimumGraphHeight,
+            AppSettings.AbsoluteMaximumGraphHeight,
+            "Graph max height");
+    }
+
+    /// <summary>
     /// Registers or removes the logon task. Applied immediately, and reverted if Windows refuses,
     /// so the checkbox never claims a state the system does not actually have.
     /// </summary>
@@ -298,12 +447,6 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     // --------------------------------------------------- pending (needs Save)
-
-    public bool CollectHistory
-    {
-        get => _collectHistory;
-        set => SetPending(ref _collectHistory, value);
-    }
 
     public bool UseUnifiedPollingInterval
     {
@@ -481,12 +624,25 @@ public sealed class SettingsViewModel : ObservableObject
 
         var updated = _settings.Current;
         updated.MetricDisplay = StageRows
-            .Select(row => new MetricDisplaySettings { MetricType = row.MetricType, Visible = row.IsVisible })
+            .Select(row => new MetricDisplaySettings
+            {
+                MetricType = row.MetricType,
+                Visible = row.IsVisible,
+                ShowGraph = row.IsGraphVisible,
+            })
             .ToList();
         updated.WidgetAppearance = AppSettings.NormalizeAppearance(WidgetAppearance);
         updated.WidgetFont = AppSettings.NormalizeFont(WidgetFont);
         updated.WidgetTextWeight = AppSettings.NormalizeTextWeight(WidgetTextWeight);
         updated.ShowRamUsedAndTotal = ShowRamUsedAndTotal;
+        updated.WidgetLabelColumnWidth = _widgetLabelColumnWidth;
+        updated.WidgetGraphColumnWidth = _widgetGraphColumnWidth;
+        updated.WidgetValueColumnWidth = _widgetValueColumnWidth;
+        updated.WidgetValueColumnWidthWithRam = _widgetValueColumnWidthWithRam;
+        updated.WidgetMinimumColumnWidth = _widgetMinimumColumnWidth;
+        updated.WidgetMinimumColumnWidthWithRam = _widgetMinimumColumnWidthWithRam;
+        updated.WidgetGraphHeightMinimum = _widgetGraphHeightMinimum;
+        updated.WidgetGraphHeightMaximum = _widgetGraphHeightMaximum;
         updated.MetricStages = stages;
 
         _settings.Save(updated);
@@ -517,7 +673,6 @@ public sealed class SettingsViewModel : ObservableObject
         ValidationMessage = null;
 
         var updated = _settings.Current;
-        updated.CollectHistory = CollectHistory;
         updated.UseUnifiedPollingInterval = UseUnifiedPollingInterval;
         updated.UnifiedPollingSeconds = UnifiedInterval.Seconds;
         updated.CpuTemperaturePollingSeconds = CpuTemperatureInterval.Seconds;
@@ -633,7 +788,8 @@ public sealed class SettingsViewModel : ObservableObject
             label,
             unit,
             settings.ResolveStages(metric),
-            settings.IsVisible(metric));
+            settings.IsVisible(metric),
+            settings.IsGraphVisible(metric));
 
     private void SetLive<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
@@ -642,6 +798,69 @@ public sealed class SettingsViewModel : ObservableObject
             ApplyLive();
         }
     }
+
+    /// <summary>
+    /// Parses one column-width textbox: "*" or a number of pixels within range. A valid value
+    /// updates the canonical width that Save persists and applies live; anything else is left as
+    /// typed and reported, without touching that canonical value, so a mid-edit textbox never
+    /// reverts under the user's cursor.
+    /// </summary>
+    private void SetColumnWidth(
+        ref string textField,
+        string value,
+        ref string widthField,
+        double minimum,
+        double maximum,
+        string label,
+        [CallerMemberName] string? propertyName = null)
+    {
+        if (!SetProperty(ref textField, value, propertyName))
+        {
+            return;
+        }
+
+        if (!AppSettings.IsValidColumnWidth(value, minimum, maximum))
+        {
+            ValidationMessage = $"{label} must be \"*\" or a number between {minimum:0} and {maximum:0}.";
+            return;
+        }
+
+        ValidationMessage = null;
+        widthField = value.Trim();
+        ApplyLive();
+    }
+
+    /// <summary>
+    /// Parses one plain numeric textbox, no "*" option. Same last-valid-on-failure behaviour as
+    /// <see cref="SetColumnWidth"/>.
+    /// </summary>
+    private void SetPixelValue(
+        ref string textField,
+        string value,
+        ref double valueField,
+        double minimum,
+        double maximum,
+        string label,
+        [CallerMemberName] string? propertyName = null)
+    {
+        if (!SetProperty(ref textField, value, propertyName))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || parsed < minimum || parsed > maximum)
+        {
+            ValidationMessage = $"{label} must be a number between {minimum:0} and {maximum:0}.";
+            return;
+        }
+
+        ValidationMessage = null;
+        valueField = parsed;
+        ApplyLive();
+    }
+
+    private static string FormatNumber(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
 
     private bool SetPending<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

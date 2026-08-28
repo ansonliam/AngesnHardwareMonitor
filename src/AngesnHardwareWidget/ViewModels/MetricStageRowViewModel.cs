@@ -14,6 +14,7 @@ public sealed class MetricStageRowViewModel : ObservableObject
     private readonly string _metricType;
 
     private bool _isVisible;
+    private bool _isGraphVisible;
     private string _stage1Maximum;
     private string _stage2Maximum;
     private string _stage3Maximum;
@@ -25,12 +26,14 @@ public sealed class MetricStageRowViewModel : ObservableObject
         string label,
         string unit,
         MetricStageSettings stages,
-        bool isVisible)
+        bool isVisible,
+        bool isGraphVisible)
     {
         _metricType = metricType;
         Label = label;
         Unit = unit;
         _isVisible = isVisible;
+        _isGraphVisible = isGraphVisible;
         Minimum = stages.Minimum;
         Maximum = stages.Maximum;
 
@@ -54,6 +57,19 @@ public sealed class MetricStageRowViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _isVisible, value))
+            {
+                Edited?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    /// <summary>Whether this metric's history sparkline is shown. Applies live, like the thresholds.</summary>
+    public bool IsGraphVisible
+    {
+        get => _isGraphVisible;
+        set
+        {
+            if (SetProperty(ref _isGraphVisible, value))
             {
                 Edited?.Invoke(this, EventArgs.Empty);
             }

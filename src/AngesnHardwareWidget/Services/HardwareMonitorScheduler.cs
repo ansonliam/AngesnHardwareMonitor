@@ -27,7 +27,6 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     private static readonly TimeSpan IdleStateCheckInterval = TimeSpan.FromSeconds(5);
 
     private readonly IHardwareMonitorService _monitor;
-    private readonly HardwareHistoryRepository _history;
     private readonly SettingsService _settings;
     private readonly ISystemIdleTimeProvider _idleTime;
     private readonly SemaphoreSlim _restartGate = new(1, 1);
@@ -53,12 +52,10 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
 
     public HardwareMonitorScheduler(
         IHardwareMonitorService monitor,
-        HardwareHistoryRepository history,
         SettingsService settings,
         ISystemIdleTimeProvider? idleTime = null)
     {
         _monitor = monitor;
-        _history = history;
         _settings = settings;
         _idleTime = idleTime ?? new SystemIdleTimeProvider();
     }
@@ -333,18 +330,6 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
             return;
         }
 
-        // Capture the timestamp once; both persisted timestamp columns derive from it.
-        var timestamp = DateTimeOffset.UtcNow;
-
         SnapshotAvailable?.Invoke(this, snapshot);
-
-        if (!_settings.Current.CollectHistory)
-        {
-            return;
-        }
-
-        await _history
-            .AppendAsync(HardwareHistoryRecord.FromSnapshot(snapshot, timestamp), cancellationToken)
-            .ConfigureAwait(false);
     }
 }

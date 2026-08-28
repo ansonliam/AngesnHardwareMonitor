@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Windows;
 using System.Windows.Media;
 using AngesnHardwareWidget.Models;
 using AngesnHardwareWidget.Services;
@@ -28,16 +30,22 @@ public enum MetricFormat
 public sealed class MetricTileViewModel : ObservableObject
 {
     private const string Unavailable = "--";
+    private static readonly TimeSpan HistoryWindow = TimeSpan.FromMinutes(15);
+    private const int MaximumHistoryPoints = 2048;
 
     private string _display = Unavailable;
     private Brush? _valueBrush;
     private int _stage;
+    private double _graphMaximum;
+    private bool _showGraph = true;
+    private GridLength _valueColumnWidth = new(1, GridUnitType.Star);
 
     public MetricTileViewModel(HardwareMetrics metric, string label, MetricFormat format)
     {
         Metric = metric;
         Label = label;
         Format = format;
+        _graphMaximum = format == MetricFormat.Rpm ? 1000 : 100;
     }
 
     public HardwareMetrics Metric { get; }
@@ -45,6 +53,32 @@ public sealed class MetricTileViewModel : ObservableObject
     public string Label { get; }
 
     public MetricFormat Format { get; }
+
+    public ObservableCollection<HardwareHistoryPoint> History { get; } = [];
+
+    public double GraphMaximum
+    {
+        get => _graphMaximum;
+        private set => SetProperty(ref _graphMaximum, value);
+    }
+
+    /// <summary>Whether this metric's history sparkline is shown. Set from settings, not by the user directly.</summary>
+    public bool ShowGraph
+    {
+        get => _showGraph;
+        set => SetProperty(ref _showGraph, value);
+    }
+
+    /// <summary>
+    /// This row's own value-column width. Ordinarily every row shares the same width, but the RAM
+    /// override only widens the RAM row, so each tile carries its own rather than the widget
+    /// binding all rows to one shared resource. Set from settings, not by the user directly.
+    /// </summary>
+    public GridLength ValueColumnWidth
+    {
+        get => _valueColumnWidth;
+        set => SetProperty(ref _valueColumnWidth, value);
+    }
 
     public string Display
     {
@@ -93,6 +127,56 @@ public sealed class MetricTileViewModel : ObservableObject
         ValueBrush = palette.BrushForStage(Stage);
     }
 
+    public void RecordSample(double? value, DateTimeOffset recordedAt)
+    {
+        if (value is not { } number || !double.IsFinite(number))
+        {
+            return;
+        }
+
+        var point = new HardwareHistoryPoint(recordedAt, number);
+        if (History.Count > 0)
+        {
+            var last = History[^1];
+            if (recordedAt < last.RecordedAt)
+            {
+                return;
+            }
+
+            if (recordedAt == last.RecordedAt)
+            {
+                History[^1] = point;
+                UpdateGraphMaximum();
+                return;
+            }
+        }
+
+        History.Add(point);
+        var cutoff = recordedAt - HistoryWindow;
+        while (History.Count > 1 && History[1].RecordedAt < cutoff)
+        {
+            History.RemoveAt(0);
+        }
+
+        while (History.Count > MaximumHistoryPoints)
+        {
+            History.RemoveAt(0);
+        }
+
+        UpdateGraphMaximum();
+    }
+
+    private void UpdateGraphMaximum()
+    {
+        if (Format != MetricFormat.Rpm)
+        {
+            return;
+        }
+
+        var peak = History.Count == 0 ? 0 : History.Max(point => point.Value);
+        GraphMaximum = Math.Max(1000, Math.Ceiling(peak / 500) * 500);
+    }
+
     private static string FormatNumber(double? value, string format, string suffix) =>
         value is { } number
             ? Math.Round(number).ToString(format, CultureInfo.CurrentCulture) + suffix
@@ -117,3 +201,5 @@ public sealed class MetricTileViewModel : ObservableObject
         return string.Format(CultureInfo.CurrentCulture, "{0:0.0}/{1:0.0} GB ({2})", used, total, percentText);
     }
 }
+
+public sealed record HardwareHistoryPoint(DateTimeOffset RecordedAt, double Value);

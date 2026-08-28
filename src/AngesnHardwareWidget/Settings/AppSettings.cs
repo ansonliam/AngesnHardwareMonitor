@@ -1,3 +1,4 @@
+using System.Globalization;
 using AngesnHardwareWidget.Models;
 
 namespace AngesnHardwareWidget.Settings;
@@ -24,6 +25,50 @@ public sealed class AppSettings
 
     public const string RetroAppearance = "Retro";
     public const string DefaultAppearance = "Default";
+
+    // Each column width is either a fixed pixel size or "*", exactly like a Grid's own
+    // ColumnDefinition.Width syntax -- "*" tells that column to take up whatever space the other
+    // two do not need, the same way the value column always has. A fixed size keeps every row's
+    // label, graph and value starting at the same x down the card; Auto would size each column to
+    // its own longest content instead of a shared width.
+    public const string StarColumnWidth = "*";
+
+    public const string DefaultLabelColumnWidth = "78";
+    public const double MinimumLabelColumnWidth = 1;
+    public const double MaximumLabelColumnWidth = 140;
+
+    public const string DefaultGraphColumnWidth = "58";
+    public const double MinimumGraphColumnWidth = 1;
+    public const double MaximumGraphColumnWidth = 120;
+
+    public const string DefaultValueColumnWidth = StarColumnWidth;
+    public const double MinimumValueColumnWidth = 1;
+    public const double MaximumValueColumnWidth = 400;
+
+    // "*" here would look identical to the normal value column, defeating the point of an
+    // override, so the RAM-expanded default is a fixed width wide enough for "23.2/63.9 GB (36%)".
+    public const string DefaultValueColumnWidthWithRam = "150";
+
+    // How narrow a metric column may get, per MetricColumnsPanel, before the widget folds its
+    // columns back down (eventually to one). Below this, another column of rows would not fit
+    // without the row itself becoming too cramped to read.
+    public const double DefaultMinimumColumnWidth = 130;
+    public const double MinimumMinimumColumnWidth = 1;
+    public const double MaximumMinimumColumnWidth = 1000;
+
+    // The RAM-expanded value ("23.2/63.9 GB (36%)") needs a wider column before it is worth
+    // splitting into another one, same reasoning as the value-column override above.
+    public const double DefaultMinimumColumnWidthWithRam = 180;
+
+    // The graph has no fixed height of its own: it stretches to whatever height its row ends up
+    // (driven by the label and value text next to it), bounded by these two. The floor and ceiling
+    // below are what the min/max settings are themselves clamped to, so a bad value in either
+    // cannot squeeze the graph out of existence or blow the widget up to something absurd.
+    public const double AbsoluteMinimumGraphHeight = 1;
+    public const double AbsoluteMaximumGraphHeight = 1000;
+
+    public const double DefaultGraphHeightMinimum = 1;
+    public const double DefaultGraphHeightMaximum = 200;
 
     public const string SystemFont = "Segoe UI Variable Text";
 
@@ -63,6 +108,40 @@ public sealed class AppSettings
     /// <summary>Presentation only. Never affects what is collected or stored in history.</summary>
     public bool ShowRamUsedAndTotal { get; set; }
 
+    /// <summary>Width of the label column: a pixel size before scaling, or "*". Presentation only.</summary>
+    public string WidgetLabelColumnWidth { get; set; } = DefaultLabelColumnWidth;
+
+    /// <summary>Width of the history-graph column: a pixel size before scaling, or "*". Presentation only.</summary>
+    public string WidgetGraphColumnWidth { get; set; } = DefaultGraphColumnWidth;
+
+    /// <summary>Width of the value column: a pixel size before scaling, or "*". Presentation only.</summary>
+    public string WidgetValueColumnWidth { get; set; } = DefaultValueColumnWidth;
+
+    /// <summary>
+    /// Overrides <see cref="WidgetValueColumnWidth"/> while <see cref="ShowRamUsedAndTotal"/> is on,
+    /// since "23.2/63.9 GB (36%)" needs noticeably more room than every other metric's value ever
+    /// does. Same syntax as the other column widths: a pixel size before scaling, or "*".
+    /// </summary>
+    public string WidgetValueColumnWidthWithRam { get; set; } = DefaultValueColumnWidthWithRam;
+
+    /// <summary>
+    /// Narrowest a metric column may get before the widget folds its columns back down --
+    /// eventually to a single column of rows. Presentation only.
+    /// </summary>
+    public double WidgetMinimumColumnWidth { get; set; } = DefaultMinimumColumnWidth;
+
+    /// <summary>Overrides <see cref="WidgetMinimumColumnWidth"/> while <see cref="ShowRamUsedAndTotal"/> is on.</summary>
+    public double WidgetMinimumColumnWidthWithRam { get; set; } = DefaultMinimumColumnWidthWithRam;
+
+    /// <summary>
+    /// Lower bound on the history graph's height, before scaling: the graph stretches to fill its
+    /// row, clamped between this and <see cref="WidgetGraphHeightMaximum"/>. Presentation only.
+    /// </summary>
+    public double WidgetGraphHeightMinimum { get; set; } = DefaultGraphHeightMinimum;
+
+    /// <summary>Upper bound on the history graph's height, before scaling. Presentation only.</summary>
+    public double WidgetGraphHeightMaximum { get; set; } = DefaultGraphHeightMaximum;
+
     public int CpuTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
     public int CpuUsagePollingSeconds { get; set; } = DefaultPollingSeconds;
     public int MemoryUsagePollingSeconds { get; set; } = DefaultPollingSeconds;
@@ -93,9 +172,6 @@ public sealed class AppSettings
     public int IdleGpuMemoryUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
     public int IdleGpuMemoryTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
     public int IdleGpuFanPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
-
-    /// <summary>History collection is on by default.</summary>
-    public bool CollectHistory { get; set; } = true;
 
     /// <summary>"Retro" or "Default", matching the AI Usage Monitor's widget appearances.</summary>
     public string WidgetAppearance { get; set; } = RetroAppearance;
@@ -223,6 +299,14 @@ public sealed class AppSettings
         return entry?.Visible ?? true;
     }
 
+    /// <summary>Whether one metric's history sparkline is shown. Unknown metrics default to visible.</summary>
+    public bool IsGraphVisible(HardwareMetrics metric)
+    {
+        var key = MetricTypes.DisplayKeyOf(metric);
+        var entry = MetricDisplay.FirstOrDefault(item => item.MetricType == key);
+        return entry?.ShowGraph ?? true;
+    }
+
     /// <summary>Stage thresholds for a displayed metric, falling back to that metric's defaults.</summary>
     public MetricStageSettings ResolveStages(HardwareMetrics metric)
     {
@@ -240,6 +324,23 @@ public sealed class AppSettings
 
     public static bool IsValidIdleAfter(int seconds) =>
         seconds is >= MinimumIdleAfterSeconds and <= MaximumIdleAfterSeconds;
+
+    /// <summary>
+    /// True for "*" (case-insensitive, ignoring surrounding whitespace -- the Grid syntax it
+    /// mirrors is not case sensitive either) or a finite number of pixels within range.
+    /// </summary>
+    public static bool IsValidColumnWidth(string? text, double minimum, double maximum)
+    {
+        var trimmed = text?.Trim();
+        if (string.Equals(trimmed, StarColumnWidth, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var pixels)
+            && pixels >= minimum
+            && pixels <= maximum;
+    }
 
     /// <summary>
     /// Whether two settings objects produce the same polling schedule. Settings are saved for
@@ -314,6 +415,30 @@ public sealed class AppSettings
         WidgetTextScale = double.IsFinite(WidgetTextScale) ? Math.Clamp(WidgetTextScale, 0.85, 1.5) : 1.0;
         WidgetWidth = double.IsFinite(WidgetWidth) ? Math.Clamp(WidgetWidth, 150, 2400) : 200;
         WidgetHeight = double.IsFinite(WidgetHeight) ? Math.Clamp(WidgetHeight, 90, 1600) : 236;
+        WidgetLabelColumnWidth = IsValidColumnWidth(WidgetLabelColumnWidth, MinimumLabelColumnWidth, MaximumLabelColumnWidth)
+            ? WidgetLabelColumnWidth.Trim()
+            : DefaultLabelColumnWidth;
+        WidgetGraphColumnWidth = IsValidColumnWidth(WidgetGraphColumnWidth, MinimumGraphColumnWidth, MaximumGraphColumnWidth)
+            ? WidgetGraphColumnWidth.Trim()
+            : DefaultGraphColumnWidth;
+        WidgetValueColumnWidth = IsValidColumnWidth(WidgetValueColumnWidth, MinimumValueColumnWidth, MaximumValueColumnWidth)
+            ? WidgetValueColumnWidth.Trim()
+            : DefaultValueColumnWidth;
+        WidgetValueColumnWidthWithRam = IsValidColumnWidth(WidgetValueColumnWidthWithRam, MinimumValueColumnWidth, MaximumValueColumnWidth)
+            ? WidgetValueColumnWidthWithRam.Trim()
+            : DefaultValueColumnWidthWithRam;
+        WidgetMinimumColumnWidth = double.IsFinite(WidgetMinimumColumnWidth)
+            ? Math.Clamp(WidgetMinimumColumnWidth, MinimumMinimumColumnWidth, MaximumMinimumColumnWidth)
+            : DefaultMinimumColumnWidth;
+        WidgetMinimumColumnWidthWithRam = double.IsFinite(WidgetMinimumColumnWidthWithRam)
+            ? Math.Clamp(WidgetMinimumColumnWidthWithRam, MinimumMinimumColumnWidth, MaximumMinimumColumnWidth)
+            : DefaultMinimumColumnWidthWithRam;
+        WidgetGraphHeightMinimum = double.IsFinite(WidgetGraphHeightMinimum)
+            ? Math.Clamp(WidgetGraphHeightMinimum, AbsoluteMinimumGraphHeight, AbsoluteMaximumGraphHeight)
+            : DefaultGraphHeightMinimum;
+        WidgetGraphHeightMaximum = double.IsFinite(WidgetGraphHeightMaximum)
+            ? Math.Clamp(WidgetGraphHeightMaximum, WidgetGraphHeightMinimum, AbsoluteMaximumGraphHeight)
+            : DefaultGraphHeightMaximum;
 
         MetricStages ??= [];
         MetricDisplay ??= [];
@@ -349,6 +474,14 @@ public sealed class AppSettings
         UseUnifiedPollingInterval = UseUnifiedPollingInterval,
         UnifiedPollingSeconds = UnifiedPollingSeconds,
         ShowRamUsedAndTotal = ShowRamUsedAndTotal,
+        WidgetLabelColumnWidth = WidgetLabelColumnWidth,
+        WidgetGraphColumnWidth = WidgetGraphColumnWidth,
+        WidgetValueColumnWidth = WidgetValueColumnWidth,
+        WidgetValueColumnWidthWithRam = WidgetValueColumnWidthWithRam,
+        WidgetMinimumColumnWidth = WidgetMinimumColumnWidth,
+        WidgetMinimumColumnWidthWithRam = WidgetMinimumColumnWidthWithRam,
+        WidgetGraphHeightMinimum = WidgetGraphHeightMinimum,
+        WidgetGraphHeightMaximum = WidgetGraphHeightMaximum,
         CpuTemperaturePollingSeconds = CpuTemperaturePollingSeconds,
         CpuUsagePollingSeconds = CpuUsagePollingSeconds,
         MemoryUsagePollingSeconds = MemoryUsagePollingSeconds,
@@ -357,7 +490,6 @@ public sealed class AppSettings
         GpuMemoryUsagePollingSeconds = GpuMemoryUsagePollingSeconds,
         GpuMemoryTemperaturePollingSeconds = GpuMemoryTemperaturePollingSeconds,
         GpuFanPollingSeconds = GpuFanPollingSeconds,
-        CollectHistory = CollectHistory,
         UseIdlePolling = UseIdlePolling,
         IdleAfterSeconds = IdleAfterSeconds,
         IdleUnifiedPollingSeconds = IdleUnifiedPollingSeconds,

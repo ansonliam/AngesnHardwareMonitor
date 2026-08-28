@@ -9,13 +9,12 @@ using Microsoft.Win32;
 namespace AngesnHardwareWidget;
 
 /// <summary>
-/// Composition root. Builds the one long-lived monitor service, the history repository, the
-/// settings store and the single background scheduler, then wires them to the widget and tray icon.
+/// Composition root. Builds the one long-lived monitor service, settings store and background
+/// scheduler, then wires them to the widget and tray icon.
 /// </summary>
 public partial class App : Application, IApplicationController
 {
     private LibreHardwareMonitorService? _monitor;
-    private HardwareHistoryRepository? _history;
     private HardwareMonitorScheduler? _scheduler;
     private SettingsService? _settings;
     private TrayIconService? _tray;
@@ -52,7 +51,6 @@ public partial class App : Application, IApplicationController
 
         _settings = new SettingsService();
         _activeSchedule = _settings.Current;
-        _history = new HardwareHistoryRepository();
         _monitor = new LibreHardwareMonitorService();
 
         // Initialization can fail on a locked-down machine or without the kernel driver; the widget
@@ -66,7 +64,7 @@ public partial class App : Application, IApplicationController
             AppLog.Error("LibreHardwareMonitor initialization failed; the widget will run degraded", exception);
         }
 
-        _scheduler = new HardwareMonitorScheduler(_monitor, _history, _settings);
+        _scheduler = new HardwareMonitorScheduler(_monitor, _settings);
 
         _widget = new MainWindow(_settings);
         _mainViewModel = new MainViewModel(_settings, Dispatcher, ShowSettings, RefreshNow, ExitApplication);
@@ -86,7 +84,6 @@ public partial class App : Application, IApplicationController
         // repoint it. Cheap, idempotent, and it stops "start with Windows" silently rotting.
         new WindowsStartupService().EnsurePathCurrent();
 
-        _ = InitializeHistoryAsync();
         _scheduler.Start();
     }
 
@@ -105,7 +102,6 @@ public partial class App : Application, IApplicationController
         _tray?.Dispose();
         _singleInstance?.Dispose();
         _monitor?.Dispose();
-        _history?.Dispose();
 
         base.OnExit(eventArgs);
     }
@@ -188,20 +184,6 @@ public partial class App : Application, IApplicationController
 
         _activeSchedule = updated;
         _ = _scheduler.RestartAsync();
-    }
-
-    private async Task InitializeHistoryAsync()
-    {
-        if (_history is null)
-        {
-            return;
-        }
-
-        await _history.InitializeAsync().ConfigureAwait(false);
-
-        // MVP keeps history indefinitely. The call is wired anyway so the retention seam is
-        // exercised and a real policy only needs a different argument.
-        await _history.ApplyRetentionAsync(HistoryRetentionPolicy.Unlimited).ConfigureAwait(false);
     }
 
     /// <summary>

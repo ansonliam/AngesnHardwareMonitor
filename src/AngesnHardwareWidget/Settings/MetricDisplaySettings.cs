@@ -12,9 +12,13 @@ public sealed class MetricDisplaySettings
 
     public bool Visible { get; set; } = true;
 
+    /// <summary>Whether this metric's history sparkline is shown. Presentation only.</summary>
+    public bool ShowGraph { get; set; } = true;
+
     public MetricDisplaySettings Clone() => new()
     {
         MetricType = MetricType,
         Visible = Visible,
+        ShowGraph = ShowGraph,
     };
 }

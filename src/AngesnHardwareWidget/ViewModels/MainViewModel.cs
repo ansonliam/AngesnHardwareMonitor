@@ -59,6 +59,7 @@ public sealed class MainViewModel : ObservableObject
         };
 
         Metrics = [];
+        ApplyPerTilePresentation();
         RebuildMetrics();
         RefreshAllTiles();
 
@@ -108,12 +109,14 @@ public sealed class MainViewModel : ObservableObject
     public void Apply(HardwareSnapshot snapshot) => RunOnUi(() =>
     {
         var sampled = snapshot.SampledMetrics;
+        var recordedAt = DateTimeOffset.Now;
 
         if (sampled.Includes(HardwareMetrics.CpuTemperature))
         {
             _cpuTemperature = snapshot.CpuTemperature;
             OnPropertyChanged(nameof(CpuTemperature));
             RefreshTile(HardwareMetrics.CpuTemperature);
+            RecordSample(HardwareMetrics.CpuTemperature, _cpuTemperature, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.CpuUsage))
@@ -121,6 +124,7 @@ public sealed class MainViewModel : ObservableObject
             _cpuUsagePercent = snapshot.CpuUsagePercent;
             OnPropertyChanged(nameof(CpuUsagePercent));
             RefreshTile(HardwareMetrics.CpuUsage);
+            RecordSample(HardwareMetrics.CpuUsage, _cpuUsagePercent, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.MemoryUsage))
@@ -132,6 +136,7 @@ public sealed class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(MemoryTotalGb));
             OnPropertyChanged(nameof(MemoryUsagePercent));
             RefreshTile(HardwareMetrics.MemoryUsage);
+            RecordSample(HardwareMetrics.MemoryUsage, _memoryUsagePercent, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.GpuTemperature))
@@ -139,6 +144,7 @@ public sealed class MainViewModel : ObservableObject
             _gpuTemperature = snapshot.GpuTemperature;
             OnPropertyChanged(nameof(GpuTemperature));
             RefreshTile(HardwareMetrics.GpuTemperature);
+            RecordSample(HardwareMetrics.GpuTemperature, _gpuTemperature, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.GpuComputeUsage))
@@ -146,6 +152,7 @@ public sealed class MainViewModel : ObservableObject
             _gpuComputeUsagePercent = snapshot.GpuComputeUsagePercent;
             OnPropertyChanged(nameof(GpuComputeUsagePercent));
             RefreshTile(HardwareMetrics.GpuComputeUsage);
+            RecordSample(HardwareMetrics.GpuComputeUsage, _gpuComputeUsagePercent, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.GpuMemoryUsage))
@@ -153,6 +160,7 @@ public sealed class MainViewModel : ObservableObject
             _gpuMemoryUsagePercent = snapshot.GpuMemoryUsagePercent;
             OnPropertyChanged(nameof(GpuMemoryUsagePercent));
             RefreshTile(HardwareMetrics.GpuMemoryUsage);
+            RecordSample(HardwareMetrics.GpuMemoryUsage, _gpuMemoryUsagePercent, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.GpuMemoryTemperature))
@@ -160,6 +168,7 @@ public sealed class MainViewModel : ObservableObject
             _gpuMemoryTemperature = snapshot.GpuMemoryTemperature;
             OnPropertyChanged(nameof(GpuMemoryTemperature));
             RefreshTile(HardwareMetrics.GpuMemoryTemperature);
+            RecordSample(HardwareMetrics.GpuMemoryTemperature, _gpuMemoryTemperature, recordedAt);
         }
 
         if (sampled.Includes(HardwareMetrics.GpuFan))
@@ -167,6 +176,7 @@ public sealed class MainViewModel : ObservableObject
             _gpuFanRpm = snapshot.GpuFanRpm;
             OnPropertyChanged(nameof(GpuFanRpm));
             RefreshTile(HardwareMetrics.GpuFan);
+            RecordSample(HardwareMetrics.GpuFan, _gpuFanRpm, recordedAt);
         }
     });
 
@@ -175,8 +185,33 @@ public sealed class MainViewModel : ObservableObject
         _current = updated;
         _palette = new MetricStagePalette(updated);
         OnPropertyChanged(nameof(WidgetAppearance));
+        ApplyPerTilePresentation();
         RebuildMetrics();
         RefreshAllTiles();
+    }
+
+    /// <summary>
+    /// Applies each metric's show-graph setting to its cached tile. Separate from
+    /// <see cref="RebuildMetrics"/>, which short-circuits when order and visibility have not
+    /// changed and would otherwise miss a graph-only toggle or a value-width change.
+    /// </summary>
+    private void ApplyPerTilePresentation()
+    {
+        var scale = _current.WidgetTextScale;
+
+        // Every metric shares one value-column width except RAM: while RAM used/total is shown,
+        // "23.2/63.9 GB (36%)" needs a wider column than any other metric's value ever does, and
+        // only that row should widen for it.
+        var valueColumnWidth = ColumnWidths.Parse(_current.WidgetValueColumnWidth, scale);
+        var ramValueColumnWidth = _current.ShowRamUsedAndTotal
+            ? ColumnWidths.Parse(_current.WidgetValueColumnWidthWithRam, scale)
+            : valueColumnWidth;
+
+        foreach (var (metric, tile) in _tiles)
+        {
+            tile.ShowGraph = _current.IsGraphVisible(metric);
+            tile.ValueColumnWidth = metric == HardwareMetrics.MemoryUsage ? ramValueColumnWidth : valueColumnWidth;
+        }
     }
 
     /// <summary>
@@ -241,6 +276,9 @@ public sealed class MainViewModel : ObservableObject
         HardwareMetrics.GpuFan => _gpuFanRpm,
         _ => null,
     };
+
+    private void RecordSample(HardwareMetrics metric, double? value, DateTimeOffset recordedAt) =>
+        _tiles[metric].RecordSample(value, recordedAt);
 
     private void RunOnUi(Action action)
     {
