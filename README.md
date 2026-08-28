@@ -9,16 +9,8 @@ Pairs with [AI Usage Monitor](https://github.com/ansonliam/AIUsageMonitor), a si
 tracking Codex, Claude Code, Antigravity and Cursor usage and reset times — same widget shape,
 same appearance options, side by side on the desktop.
 
-```
-CPU TEMP    48°
-CPU USE     12%
-RAM         36%
-GPU TEMP    43°
-COMPUTE      4%
-GPU MEM     27%
-VRAM TEMP   56°
-FAN         1250
-```
+![Uploading image.png…]()
+
 
 ## Metrics
 
