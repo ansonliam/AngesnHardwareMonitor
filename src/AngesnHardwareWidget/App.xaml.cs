@@ -84,11 +84,6 @@ public partial class App : Application, IApplicationController
         // repoint it. Cheap, idempotent, and it stops "start with Windows" silently rotting.
         new WindowsStartupService().EnsurePathCurrent();
 
-        // So the widget shows up in Windows Search, the same way the AI Usage Monitor does. Also
-        // cheap and idempotent, for the same reason: a rebuilt or moved app should not leave a
-        // dead shortcut behind.
-        new StartMenuShortcutService().EnsureCurrent();
-
         _scheduler.Start();
     }
 
