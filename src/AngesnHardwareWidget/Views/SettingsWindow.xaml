@@ -188,139 +188,152 @@
                 </Grid>
 
                 <!--
-                    Three separate Grids (one per field group), each followed by its own plain
-                    HintText outside the Grid, rather than one Grid holding all three groups plus
-                    their explanations. A TextBlock spanning several Auto columns forces WPF to
-                    measure it at its full, unwrapped width to decide how wide those columns need
-                    to be, so a whole paragraph living inside the Grid ballooned every column out to
-                    fit one line of text, pushing "Value width" and "Min width (RAM)" off the right
-                    edge of the dialog entirely. Kept outside the Grid, each hint is free to wrap
-                    against the StackPanel's real width instead.
+                    Six proportional columns (2*, 1*) x3 rather than Auto or fixed pixels: Auto sizes
+                    a column to whatever it holds, including a TextBlock spanning it, so a hint
+                    spanning every column forced them all wide enough to fit one line, pushing
+                    "Value width" and "Min width (RAM)" off the dialog's right edge before wrapping
+                    ever kicked in. Star columns divide whatever width the Grid actually has instead
+                    of growing to fit a spanning child, so the hint rows can span safely and the
+                    label:box ratio holds at any dialog width.
                 -->
                 <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
                     <TextBlock
+                        Grid.Row="0"
                         Grid.Column="0"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Label width" />
                     <TextBox
+                        Grid.Row="0"
                         Grid.Column="1"
+                        Margin="0,0,10,0"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetLabelColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Column="3"
+                        Grid.Row="0"
+                        Grid.Column="2"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph width" />
                     <TextBox
-                        Grid.Column="4"
+                        Grid.Row="0"
+                        Grid.Column="3"
+                        Margin="0,0,10,0"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Column="6"
+                        Grid.Row="0"
+                        Grid.Column="4"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Value width" />
                     <TextBox
-                        Grid.Column="7"
+                        Grid.Row="0"
+                        Grid.Column="5"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetValueColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
-                </Grid>
-
-                <TextBlock
-                    Margin="0,4,0,0"
-                    Style="{StaticResource HintText}"
-                    Text="These three are pixel sizes for the label, graph and value columns of every row. Enter * instead of a number to let that column take up whatever the other two leave unused -- Value width does this by default." />
-
-                <Grid Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
 
                     <TextBlock
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="6"
+                        Margin="0,4,0,10"
+                        Style="{StaticResource HintText}"
+                        Text="These three are pixel sizes for the label, graph and value columns of every row. Enter * instead of a number to let that column take up whatever the other two leave unused -- Value width does this by default." />
+
+                    <TextBlock
+                        Grid.Row="2"
                         Grid.Column="0"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph min height" />
                     <TextBox
+                        Grid.Row="2"
                         Grid.Column="1"
+                        Margin="0,0,10,0"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphHeightMinimumText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Column="3"
+                        Grid.Row="2"
+                        Grid.Column="2"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Graph max height" />
                     <TextBox
-                        Grid.Column="4"
+                        Grid.Row="2"
+                        Grid.Column="3"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetGraphHeightMaximumText, UpdateSourceTrigger=PropertyChanged}" />
-                </Grid>
-
-                <TextBlock
-                    Margin="0,4,0,0"
-                    Style="{StaticResource HintText}"
-                    Text="The graph has no fixed height of its own: it stretches to fill its row, and these two just bound how far it can stretch." />
-
-                <Grid Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
 
                     <TextBlock
+                        Grid.Row="3"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="6"
+                        Margin="0,4,0,10"
+                        Style="{StaticResource HintText}"
+                        Text="The graph has no fixed height of its own: it stretches to fill its row, and these two just bound how far it can stretch." />
+
+                    <TextBlock
+                        Grid.Row="4"
                         Grid.Column="0"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Min column width" />
                     <TextBox
+                        Grid.Row="4"
                         Grid.Column="1"
+                        Margin="0,0,10,0"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetMinimumColumnWidthText, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock
-                        Grid.Column="3"
+                        Grid.Row="4"
+                        Grid.Column="2"
                         Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Min width (RAM)" />
                     <TextBox
-                        Grid.Column="4"
+                        Grid.Row="4"
+                        Grid.Column="3"
                         Style="{StaticResource CompactNumberBox}"
                         Text="{Binding WidgetMinimumColumnWidthWithRamText, UpdateSourceTrigger=PropertyChanged}" />
-                </Grid>
 
-                <!--
-                    Unrelated to the three column widths above, which is exactly why it was easy to
-                    misread as one of them: this is not a width on a row, it is the narrowest one
-                    whole column of rows may get before the widget folds multiple columns back into
-                    one. "Min width (RAM)" is the same threshold, used instead while RAM used/total
-                    is shown, since that wider text needs more room before another column is worth it.
-                -->
-                <TextBlock
-                    Margin="0,4,0,0"
-                    Style="{StaticResource HintText}"
-                    Text="Min column width / Min width (RAM): when the widget is wide enough to lay its metrics out in more than one side-by-side column, this is how narrow each of those columns may get before it folds back down to fewer." />
+                    <!--
+                        Unrelated to the three column widths above, which is exactly why it was easy
+                        to misread as one of them: this is not a width on a row, it is the narrowest
+                        one whole column of rows may get before the widget folds multiple columns
+                        back into one. "Min width (RAM)" is the same threshold, used instead while
+                        RAM used/total is shown, since that wider text needs more room before
+                        another column is worth it.
+                    -->
+                    <TextBlock
+                        Grid.Row="5"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="6"
+                        Margin="0,4,0,0"
+                        Style="{StaticResource HintText}"
+                        Text="Min column width / Min width (RAM): when the widget is wide enough to lay its metrics out in more than one side-by-side column, this is how narrow each of those columns may get before it folds back down to fewer." />
+                </Grid>
 
                 <CheckBox
                     Margin="0,10,0,0"
