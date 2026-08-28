@@ -5,6 +5,10 @@ A lightweight Windows hardware-monitoring widget: a borderless, always-on-top re
 readings persisted to SQLite so history charts can be added later without touching the monitoring
 pipeline. No HWiNFO dependency.
 
+Pairs with [AI Usage Monitor](https://github.com/ansonliam/AIUsageMonitor), a sibling widget for
+tracking Codex, Claude Code, Antigravity and Cursor usage and reset times — same widget shape,
+same appearance options, side by side on the desktop.
+
 ```
 CPU TEMP    48°
 CPU USE     12%
@@ -97,9 +101,9 @@ Each metric can be hidden, and rows can be dragged into any order — the widget
 in Settings. Appearance and colour stages apply as you change them; the monitoring settings rebuild
 the polling schedule, so they wait for their own Save button.
 
-Two appearances, matching the sibling AI Usage Monitor app: **Retro** (embedded pixel font, aliased
-text, square corners, 1px border) and **Default** (system font, ClearType, rounded card), plus the
-same 13-font list.
+Two appearances, matching the sibling [AI Usage Monitor](https://github.com/ansonliam/AIUsageMonitor)
+app: **Retro** (embedded pixel font, aliased text, square corners, 1px border) and **Default**
+(system font, ClearType, rounded card), plus the same 13-font list.
 
 Each metric is graded into five colour stages over its own scale rather than a blanket 0–100 —
 a CPU is never near 0 °C and fan RPM is not a percentage. All thresholds are editable.
