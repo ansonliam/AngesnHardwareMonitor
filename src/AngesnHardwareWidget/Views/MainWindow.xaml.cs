@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
     private const uint SwpNoOwnerZOrder = 0x0200;
+    private static readonly IntPtr HwndTop = IntPtr.Zero;
 
     private readonly SettingsService _settings;
     private readonly DispatcherTimer _placementSaveTimer;
@@ -232,7 +233,32 @@ public partial class MainWindow : Window
             return;
         }
 
+        RaiseZOrderWithoutActivating();
         DragMove();
+    }
+
+    /// <summary>
+    /// WS_EX_NOACTIVATE (see <see cref="ApplyNonActivatingToolWindowStyle"/>) keeps the widget out of
+    /// Alt+Tab, but it also means Windows never promotes the window's z-order on click -- that
+    /// promotion normally rides along with activation, which this window is barred from. Bring it to
+    /// the top of the (non-topmost) stack explicitly, still without activating or stealing focus.
+    /// </summary>
+    private void RaiseZOrderWithoutActivating()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        SetWindowPos(
+            handle,
+            HwndTop,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoActivate);
     }
 
     // ----------------------------------------------------------- context menu
