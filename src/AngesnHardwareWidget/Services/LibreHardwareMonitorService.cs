@@ -6,7 +6,7 @@ using LibreHardwareMonitor.Hardware;
 namespace AngesnHardwareWidget.Services;
 
 /// <summary>
-/// Reads the eight logical metrics out of LibreHardwareMonitor.
+/// Reads the widget's logical metrics out of LibreHardwareMonitor.
 ///
 /// Two rules drive the whole design. First, sensor selection is never "find the sensor named
 /// exactly X" -- it is hardware type, then sensor type, then a prioritised candidate-name list,
@@ -19,12 +19,15 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
     private const int MaxConsecutiveFailuresBeforeRediscovery = 3;
 
     private readonly object _syncRoot = new();
+    private readonly SettingsService _settings;
 
     private readonly Computer _computer = new()
     {
         IsCpuEnabled = true,
         IsMemoryEnabled = true,
         IsGpuEnabled = true,
+        IsMotherboardEnabled = true,
+        IsStorageEnabled = true,
     };
 
     private bool _opened;
@@ -34,9 +37,32 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
     private bool _warnedAboutZeroTemperature;
     private SensorCache _cache = SensorCache.Empty;
 
+    public LibreHardwareMonitorService(SettingsService settings)
+    {
+        _settings = settings;
+    }
+
     public string? CpuDeviceId => _cache.CpuDeviceId;
 
     public string? GpuDeviceId => _cache.GpuDeviceId;
+
+    public HardwareSensorCatalog GetSensorCatalog()
+    {
+        lock (_syncRoot)
+        {
+            var driveVolumes = WindowsStorageVolumeMapper.GetVolumeLabels();
+            var volumeCursor = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            return new HardwareSensorCatalog(
+                _cache.AllStorageTemperatures
+                    .Select(sensor => ToOption(sensor, driveVolumes, volumeCursor))
+                    .OrderBy(option => option.Label, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList(),
+                _cache.CpuFans
+                    .Select(sensor => ToOption(sensor))
+                    .OrderBy(option => option.Label, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList());
+        }
+    }
 
     /// <summary>
     /// Opens the backend and performs first discovery. Called once at startup; the Computer
@@ -146,21 +172,41 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
 
     private HardwareSnapshot ReadLocked(HardwareMetrics metrics)
     {
-        // Coalesce hardware updates: each hardware object is refreshed at most once per cycle no
-        // matter how many of its sensors are due.
-        if (_cache.Cpu is not null && metrics.Includes(HardwareMetrics.Cpu))
+        // Coalesce updates by owning hardware object, including motherboard sub-hardware and
+        // multiple SSDs. A metric can therefore use several sensors without multiplying updates.
+        var hardwareToUpdate = new HashSet<IHardware>();
+        void Add(IHardware? hardware)
         {
-            SafeUpdate(_cache.Cpu);
+            if (hardware is not null)
+            {
+                hardwareToUpdate.Add(hardware);
+            }
         }
 
-        if (_cache.Memory is not null && metrics.Includes(HardwareMetrics.Memory))
+        void AddSensor(ISensor? sensor) => Add(sensor?.Hardware);
+        void AddMany(IEnumerable<ISensor> sensors)
         {
-            SafeUpdate(_cache.Memory);
+            foreach (var sensor in sensors)
+            {
+                AddSensor(sensor);
+            }
         }
 
-        if (_cache.Gpu is not null && metrics.Includes(HardwareMetrics.Gpu))
+        if (metrics.Includes(HardwareMetrics.Cpu) || IncludesAnyPower(metrics)) Add(_cache.Cpu);
+        if (metrics.Includes(HardwareMetrics.MemoryUsage)) Add(_cache.Memory);
+        if (metrics.Includes(HardwareMetrics.Gpu) || IncludesAnyPower(metrics)) Add(_cache.Gpu);
+        if (metrics.Includes(HardwareMetrics.MotherboardTemperature)) AddSensor(_cache.MotherboardTemperature);
+        if (metrics.Includes(HardwareMetrics.MemoryTemperature)) AddMany(_cache.MemoryTemperatures);
+        // Refresh every fan/drive's owning hardware, not just the one selected for the aggregate
+        // metric below -- the per-sensor tiles read sensorValues from the full CpuFans/
+        // AllStorageTemperatures sets further down, so a fan or drive that isn't the selected one
+        // would otherwise never have Update() called on it and its tile would freeze.
+        if (metrics.Includes(HardwareMetrics.CpuFan)) AddMany(_cache.CpuFans);
+        if (metrics.Includes(HardwareMetrics.StorageTemperature)) AddMany(_cache.AllStorageTemperatures);
+
+        foreach (var hardware in hardwareToUpdate)
         {
-            SafeUpdate(_cache.Gpu);
+            SafeUpdate(hardware);
         }
 
         var memoryDue = metrics.Includes(HardwareMetrics.MemoryUsage);
@@ -182,6 +228,26 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             ? ResolveGpuMemoryUsagePercent(gpuMemoryUsedMb, gpuMemoryTotalMb)
             : null;
 
+        var powerDue = IncludesAnyPower(metrics);
+        var cpuPower = powerDue ? Value(_cache.CpuPower) : null;
+        var gpuPower = powerDue ? Value(_cache.GpuPower) : null;
+        var sensorValues = new Dictionary<string, double?>();
+        if (metrics.Includes(HardwareMetrics.CpuFan))
+        {
+            foreach (var sensor in _cache.CpuFans)
+            {
+                sensorValues[sensor.Identifier.ToString()] = Value(sensor);
+            }
+        }
+
+        if (metrics.Includes(HardwareMetrics.StorageTemperature))
+        {
+            foreach (var sensor in _cache.AllStorageTemperatures)
+            {
+                sensorValues[sensor.Identifier.ToString()] = Temperature(sensor);
+            }
+        }
+
         return new HardwareSnapshot(
             CpuTemperature: metrics.Includes(HardwareMetrics.CpuTemperature) ? Temperature(_cache.CpuTemperature) : null,
             CpuUsagePercent: metrics.Includes(HardwareMetrics.CpuUsage) ? Value(_cache.CpuLoad) : null,
@@ -192,13 +258,22 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             GpuComputeUsagePercent: metrics.Includes(HardwareMetrics.GpuComputeUsage) ? Value(_cache.GpuComputeLoad) : null,
             GpuMemoryUsagePercent: gpuMemoryUsagePercent,
             GpuMemoryTemperature: metrics.Includes(HardwareMetrics.GpuMemoryTemperature) ? Temperature(_cache.GpuMemoryTemperature) : null,
-            GpuFanRpm: metrics.Includes(HardwareMetrics.GpuFan) ? Value(_cache.GpuFan) : null)
+            GpuFanRpm: metrics.Includes(HardwareMetrics.GpuFan) ? Value(_cache.GpuFan) : null,
+            MotherboardTemperature: metrics.Includes(HardwareMetrics.MotherboardTemperature) ? Temperature(_cache.MotherboardTemperature) : null,
+            MemoryTemperature: metrics.Includes(HardwareMetrics.MemoryTemperature) ? MaximumTemperature(_cache.MemoryTemperatures) : null,
+            CpuFanRpm: metrics.Includes(HardwareMetrics.CpuFan) ? Value(_cache.CpuFan) : null,
+            StorageTemperature: metrics.Includes(HardwareMetrics.StorageTemperature) ? MaximumTemperature(_cache.StorageTemperatures) : null,
+            PowerWatts: metrics.Includes(HardwareMetrics.Power) ? SumAvailable(cpuPower, gpuPower) : null,
+            GpuHotSpotTemperature: metrics.Includes(HardwareMetrics.GpuHotSpotTemperature) ? Temperature(_cache.GpuHotSpotTemperature) : null,
+            CpuPowerWatts: metrics.Includes(HardwareMetrics.CpuPower) ? cpuPower : null,
+            GpuPowerWatts: metrics.Includes(HardwareMetrics.GpuPower) ? gpuPower : null)
         {
             SampledMetrics = metrics,
             CpuDeviceId = _cache.CpuDeviceId,
             GpuDeviceId = _cache.GpuDeviceId,
             GpuMemoryUsedMb = gpuMemoryUsedMb,
             GpuMemoryTotalMb = gpuMemoryTotalMb,
+            SensorValues = sensorValues,
         };
     }
 
@@ -247,7 +322,13 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             (metrics.Includes(HardwareMetrics.GpuComputeUsage) && _cache.GpuComputeLoad is not null) ||
             (metrics.Includes(HardwareMetrics.GpuMemoryUsage) && (_cache.GpuMemoryLoad is not null || _cache.GpuMemoryUsed is not null)) ||
             (metrics.Includes(HardwareMetrics.GpuMemoryTemperature) && _cache.GpuMemoryTemperature is not null) ||
-            (metrics.Includes(HardwareMetrics.GpuFan) && _cache.GpuFan is not null);
+            (metrics.Includes(HardwareMetrics.GpuFan) && _cache.GpuFan is not null) ||
+            (metrics.Includes(HardwareMetrics.MotherboardTemperature) && _cache.MotherboardTemperature is not null) ||
+            (metrics.Includes(HardwareMetrics.MemoryTemperature) && _cache.MemoryTemperatures.Count > 0) ||
+            (metrics.Includes(HardwareMetrics.CpuFan) && _cache.CpuFan is not null) ||
+            (metrics.Includes(HardwareMetrics.StorageTemperature) && _cache.StorageTemperatures.Count > 0) ||
+            (IncludesAnyPower(metrics) && (_cache.CpuPower is not null || _cache.GpuPower is not null)) ||
+            (metrics.Includes(HardwareMetrics.GpuHotSpotTemperature) && _cache.GpuHotSpotTemperature is not null);
 
         if (!expectedAnything)
         {
@@ -262,7 +343,15 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             || snapshot.GpuComputeUsagePercent is not null
             || snapshot.GpuMemoryUsagePercent is not null
             || snapshot.GpuMemoryTemperature is not null
-            || snapshot.GpuFanRpm is not null;
+            || snapshot.GpuFanRpm is not null
+            || snapshot.MotherboardTemperature is not null
+            || snapshot.MemoryTemperature is not null
+            || snapshot.CpuFanRpm is not null
+            || snapshot.StorageTemperature is not null
+            || snapshot.PowerWatts is not null
+            || snapshot.CpuPowerWatts is not null
+            || snapshot.GpuPowerWatts is not null
+            || snapshot.GpuHotSpotTemperature is not null;
 
         if (gotSomething)
         {
@@ -312,6 +401,20 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
     private static double? Percent(double? used, double? total) =>
         used is not null && total is > 0 ? used / total * 100d : null;
 
+    private static double? SumAvailable(double? first, double? second) => (first, second) switch
+    {
+        (null, null) => null,
+        ({ } value, null) => value,
+        (null, { } value) => value,
+        ({ } left, { } right) => left + right,
+    };
+
+    private double? MaximumTemperature(IEnumerable<ISensor> sensors)
+    {
+        var values = sensors.Select(Temperature).Where(value => value is not null).Select(value => value!.Value);
+        return values.Any() ? values.Max() : null;
+    }
+
     /// <summary>
     /// Temperature sensors get one extra rule: a flat 0.00 is treated as unavailable rather than as
     /// a measurement. A powered-on CPU or GPU is never at 0 C, and LibreHardwareMonitor publishes
@@ -356,7 +459,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
 
         _computer.Open();
         _opened = true;
-        AppLog.Info("LibreHardwareMonitor backend opened (CPU, memory and GPU only).");
+        AppLog.Info("LibreHardwareMonitor backend opened (CPU, memory, GPU, motherboard and storage).");
     }
 
     private void CloseLocked()
@@ -389,21 +492,56 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         var memory = _computer.Hardware.FirstOrDefault(hardware => hardware.HardwareType == HardwareType.Memory);
         var gpu = SelectGpu(_computer.Hardware);
 
-        // Sensor collections are only fully populated after a first update on some backends.
-        if (cpu is not null)
+        // Sensor collections and motherboard sub-hardware are only fully populated after an
+        // update on some backends. Update the complete tree once, then enumerate it again.
+        foreach (var hardware in _computer.Hardware)
         {
-            SafeUpdate(cpu);
+            UpdateTree(hardware);
         }
 
-        if (memory is not null)
+        var allHardware = EnumerateHardware(_computer.Hardware).ToList();
+        var boardHardware = allHardware.Where(hardware => hardware.HardwareType is
+            HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.EmbeddedController).ToList();
+        var allStorageHardware = allHardware.Where(hardware => hardware.HardwareType == HardwareType.Storage).ToList();
+        var storageHardware = allStorageHardware.Where(LooksLikeSolidStateStorage).ToList();
+        if (storageHardware.Count == 0)
         {
-            SafeUpdate(memory);
+            // Some vendors expose no useful name or identifier marker. A storage temperature is
+            // still more useful than "--" on those machines, but known HDDs never compete when a
+            // positively identified SSD/NVMe device exists.
+            storageHardware = allStorageHardware;
         }
 
-        if (gpu is not null)
-        {
-            SafeUpdate(gpu);
-        }
+        var memoryTemperatures = allHardware
+            .Where(hardware => hardware.HardwareType is not
+                (HardwareType.GpuAmd or HardwareType.GpuIntel or HardwareType.GpuNvidia or HardwareType.Storage))
+            .SelectMany(hardware => hardware.Sensors)
+            .Where(sensor => sensor.SensorType == SensorType.Temperature
+                && ContainsAny(sensor.Name, "dimm", "dram", "memory module", "ram temperature"))
+            .ToList();
+
+        var storageTemperatures = storageHardware
+            .SelectMany(hardware => hardware.Sensors)
+            .Where(sensor => sensor.SensorType == SensorType.Temperature)
+            .ToList();
+
+        // One selectable source per physical drive. NVMe devices often expose composite, sensor 1
+        // and sensor 2 temperatures; presenting all three would make one drive look like three.
+        var allStorageTemperatures = allStorageHardware
+            .Select(SelectStorageTemperature)
+            .Where(sensor => sensor is not null)
+            .Cast<ISensor>()
+            .ToList();
+
+        var cpuFans = boardHardware
+            .SelectMany(hardware => hardware.Sensors)
+            .Where(sensor => sensor.SensorType == SensorType.Fan
+                && sensor.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var configured = _settings.Current;
+        var selectedStorage = FindConfigured(allStorageTemperatures, configured.StorageTemperatureSensorId);
+        var selectedCpuFan = FindConfigured(cpuFans, configured.CpuFanSensorId);
 
         return new SensorCache
         {
@@ -413,6 +551,8 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
 
             CpuTemperature = SelectCpuTemperature(cpu),
             CpuLoad = SelectCpuLoad(cpu),
+            CpuPower = Select(cpu, SensorType.Power, ["CPU Package", "Package", "CPU PPT", "Total Power"],
+                fallback: sensor => !ContainsAny(sensor.Name, "core #", "soc", "uncore")),
 
             MemoryLoad = Select(memory, SensorType.Load, ["Memory", "Memory Load", "Physical Memory"]),
             MemoryUsed = Select(memory, SensorType.Data, ["Memory Used", "Physical Memory Used"]),
@@ -425,7 +565,48 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             GpuMemoryTotal = Select(gpu, SensorType.SmallData, ["GPU Memory Total", "D3D Dedicated Memory Total", "GPU Memory Dedicated Total"]),
             GpuMemoryTemperature = SelectGpuMemoryTemperature(gpu),
             GpuFan = Select(gpu, SensorType.Fan, ["GPU Fan", "GPU Fan 1", "Fan 1", "Fan"], fallback: _ => true),
+            GpuHotSpotTemperature = Select(gpu, SensorType.Temperature,
+                ["GPU Hot Spot", "GPU Hotspot", "Hot Spot", "Hotspot"], fallback: null),
+            GpuPower = Select(gpu, SensorType.Power,
+                ["GPU Package", "GPU Power", "GPU Board Power", "GPU Chip Power", "Board Power"],
+                fallback: sensor => !ContainsAny(sensor.Name, "memory", "core", "soc")),
+
+            MotherboardTemperature = SelectAcross(
+                boardHardware,
+                SensorType.Temperature,
+                ["Motherboard", "Mainboard", "System", "System #1", "Board"],
+                fallback: sensor => ContainsAny(sensor.Name, "motherboard", "mainboard", "system")),
+            MemoryTemperatures = memoryTemperatures,
+            CpuFan = selectedCpuFan ?? SelectAcross(
+                boardHardware,
+                SensorType.Fan,
+                ["CPU Fan", "CPU Fan #1", "Fan CPU", "CPU"],
+                fallback: sensor => sensor.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase)),
+            StorageTemperatures = selectedStorage is null ? storageTemperatures : [selectedStorage],
+            AllStorageTemperatures = allStorageTemperatures,
+            CpuFans = cpuFans,
         };
+    }
+
+    private static void UpdateTree(IHardware hardware)
+    {
+        SafeUpdate(hardware);
+        foreach (var child in hardware.SubHardware)
+        {
+            UpdateTree(child);
+        }
+    }
+
+    private static IEnumerable<IHardware> EnumerateHardware(IEnumerable<IHardware> roots)
+    {
+        foreach (var hardware in roots)
+        {
+            yield return hardware;
+            foreach (var child in EnumerateHardware(hardware.SubHardware))
+            {
+                yield return child;
+            }
+        }
     }
 
     /// <summary>
@@ -481,6 +662,10 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         return !discreteMarkers.Any(lowered.Contains) && integratedMarkers.Any(lowered.Contains);
     }
 
+    private static bool LooksLikeSolidStateStorage(IHardware hardware) =>
+        ContainsAny(hardware.Name, "ssd", "nvme", "solid state")
+        || ContainsAny(hardware.Identifier.ToString(), "/ssd/", "/nvme/");
+
     private static ISensor? SelectCpuTemperature(IHardware? cpu) => Select(
         cpu,
         SensorType.Temperature,
@@ -523,6 +708,17 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         // No fallback on purpose: GPU core temperature must never stand in for VRAM temperature.
         fallback: null);
 
+    private static ISensor? SelectStorageTemperature(IHardware hardware) => Select(
+        hardware,
+        SensorType.Temperature,
+        ["Temperature", "Drive Temperature", "Composite Temperature", "Composite"],
+        fallback: _ => true);
+
+    private static bool IncludesAnyPower(HardwareMetrics metrics) =>
+        metrics.Includes(HardwareMetrics.Power)
+        || metrics.Includes(HardwareMetrics.CpuPower)
+        || metrics.Includes(HardwareMetrics.GpuPower);
+
     /// <summary>
     /// The one sensor-matching primitive: filter by sensor type, take the first exact candidate-name
     /// match in priority order, and only then fall back to a supplied predicate.
@@ -557,6 +753,65 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         return fallback is null ? null : sensors.FirstOrDefault(fallback);
     }
 
+    private static ISensor? SelectAcross(
+        IEnumerable<IHardware> hardware,
+        SensorType sensorType,
+        string[] candidateNames,
+        Func<ISensor, bool>? fallback)
+    {
+        var sensors = hardware
+            .SelectMany(item => item.Sensors)
+            .Where(sensor => sensor.SensorType == sensorType)
+            .ToList();
+
+        foreach (var candidate in candidateNames)
+        {
+            var match = sensors.FirstOrDefault(sensor =>
+                string.Equals(sensor.Name, candidate, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return fallback is null ? null : sensors.FirstOrDefault(fallback);
+    }
+
+    private static ISensor? FindConfigured(IEnumerable<ISensor> sensors, string? identifier) =>
+        string.IsNullOrWhiteSpace(identifier)
+            ? null
+            : sensors.FirstOrDefault(sensor => string.Equals(
+                sensor.Identifier.ToString(), identifier, StringComparison.Ordinal));
+
+    // Two physical drives can report the exact same WMI model string, so driveVolumes holds one
+    // label per drive sharing that model rather than a single value. volumeCursor (one shared
+    // instance per GetSensorCatalog call) tracks how many same-model drives this call has already
+    // labelled, so each drive picks the next unused label instead of every same-model drive
+    // collapsing onto the same one.
+    private static HardwareSensorOption ToOption(
+        ISensor sensor,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? driveVolumes = null,
+        Dictionary<string, int>? volumeCursor = null)
+    {
+        var source = sensor.Hardware.Name;
+        if (driveVolumes is not null
+            && driveVolumes.TryGetValue(sensor.Hardware.Name, out var volumeLabels))
+        {
+            var index = volumeCursor is null ? 0 : volumeCursor.GetValueOrDefault(sensor.Hardware.Name);
+            if (index < volumeLabels.Count)
+            {
+                source = volumeLabels[index];
+            }
+
+            if (volumeCursor is not null)
+            {
+                volumeCursor[sensor.Hardware.Name] = index + 1;
+            }
+        }
+
+        return new HardwareSensorOption(sensor.Identifier.ToString(), $"{source} — {sensor.Name}");
+    }
+
     private static bool ContainsAny(string value, params string[] fragments) =>
         fragments.Any(fragment => value.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
@@ -565,9 +820,13 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
     private void DumpDiscoveredHardwareLocked()
     {
         var builder = new StringBuilder();
-        foreach (var hardware in _computer.Hardware)
+        foreach (var root in _computer.Hardware)
         {
-            SafeUpdate(hardware);
+            UpdateTree(root);
+        }
+
+        foreach (var hardware in EnumerateHardware(_computer.Hardware))
+        {
             builder.AppendLine($"[Hardware] {hardware.HardwareType} :: {hardware.Name} ({hardware.Identifier})");
 
             foreach (var group in hardware.Sensors
@@ -592,6 +851,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         builder.AppendLine($"Selected CPU: {Describe(_cache.Cpu)}");
         builder.AppendLine($"Selected CPU temperature: {Describe(_cache.CpuTemperature)}");
         builder.AppendLine($"Selected CPU usage: {Describe(_cache.CpuLoad)}");
+        builder.AppendLine($"Selected CPU power: {Describe(_cache.CpuPower)}");
         builder.AppendLine($"Selected RAM usage: {Describe(_cache.MemoryLoad)}");
         builder.AppendLine($"Selected RAM used: {Describe(_cache.MemoryUsed)}");
         builder.AppendLine($"Selected RAM available: {Describe(_cache.MemoryAvailable)}");
@@ -603,12 +863,24 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         builder.AppendLine($"Selected GPU memory total: {Describe(_cache.GpuMemoryTotal)}");
         builder.AppendLine($"Selected GPU memory temperature: {Describe(_cache.GpuMemoryTemperature)}");
         builder.AppendLine($"Selected GPU fan: {Describe(_cache.GpuFan)}");
+        builder.AppendLine($"Selected GPU hot spot: {Describe(_cache.GpuHotSpotTemperature)}");
+        builder.AppendLine($"Selected GPU power: {Describe(_cache.GpuPower)}");
+        builder.AppendLine($"Selected motherboard temperature: {Describe(_cache.MotherboardTemperature)}");
+        builder.AppendLine($"Selected RAM temperatures: {DescribeMany(_cache.MemoryTemperatures)}");
+        builder.AppendLine($"Selected CPU fan: {Describe(_cache.CpuFan)}");
+        builder.AppendLine($"Selected drive temperatures: {DescribeMany(_cache.StorageTemperatures)}");
         AppLog.Block("Sensor selection", builder.ToString());
     }
 
     private static string Describe(IHardware? hardware) => hardware?.Name ?? "(none)";
 
     private static string Describe(ISensor? sensor) => sensor?.Name ?? "(none)";
+
+    private static string DescribeMany(IEnumerable<ISensor> sensors)
+    {
+        var descriptions = sensors.Select(sensor => $"{sensor.Hardware.Name}: {sensor.Name}").ToList();
+        return descriptions.Count == 0 ? "(none)" : string.Join(", ", descriptions);
+    }
 
     private sealed class SensorCache
     {
@@ -620,6 +892,7 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
 
         public ISensor? CpuTemperature { get; init; }
         public ISensor? CpuLoad { get; init; }
+        public ISensor? CpuPower { get; init; }
 
         public ISensor? MemoryLoad { get; init; }
         public ISensor? MemoryUsed { get; init; }
@@ -632,11 +905,21 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
         public ISensor? GpuMemoryTotal { get; init; }
         public ISensor? GpuMemoryTemperature { get; init; }
         public ISensor? GpuFan { get; init; }
+        public ISensor? GpuHotSpotTemperature { get; init; }
+        public ISensor? GpuPower { get; init; }
+
+        public ISensor? MotherboardTemperature { get; init; }
+        public IReadOnlyList<ISensor> MemoryTemperatures { get; init; } = [];
+        public ISensor? CpuFan { get; init; }
+        public IReadOnlyList<ISensor> StorageTemperatures { get; init; } = [];
+        public IReadOnlyList<ISensor> AllStorageTemperatures { get; init; } = [];
+        public IReadOnlyList<ISensor> CpuFans { get; init; } = [];
 
         public string? CpuDeviceId => Cpu?.Identifier.ToString();
 
         public string? GpuDeviceId => Gpu?.Identifier.ToString();
 
-        public bool IsEmpty => Cpu is null && Memory is null && Gpu is null;
+        public bool IsEmpty => Cpu is null && Memory is null && Gpu is null
+            && MotherboardTemperature is null && CpuFan is null && StorageTemperatures.Count == 0;
     }
 }

@@ -23,10 +23,18 @@ public sealed class MainWindowDesignViewModel
             Create(HardwareMetrics.GpuFan, "GPU FAN", MetricFormat.Rpm, 1019, 180, settings, palette, now, 0.5),
             Create(HardwareMetrics.GpuMemoryUsage, "GPU MEM", MetricFormat.Percent, 19, 5, settings, palette, now, 2.8),
             Create(HardwareMetrics.GpuMemoryTemperature, "VRAM TEMP", MetricFormat.Temperature, 70, 3, settings, palette, now, 1.4),
+            Create(HardwareMetrics.MotherboardTemperature, "MB TEMP", MetricFormat.Temperature, 42, 2, settings, palette, now, 0.4),
+            Create(HardwareMetrics.MemoryTemperature, "RAM TEMP", MetricFormat.Temperature, 44, 2, settings, palette, now, 0.9),
+            Create(HardwareMetrics.CpuFan, "CPU FAN", MetricFormat.Rpm, 980, 120, settings, palette, now, 1.8),
+            Create(HardwareMetrics.StorageTemperature, "DRIVE TEMP", MetricFormat.Temperature, 48, 2, settings, palette, now, 2.4),
+            Create(HardwareMetrics.Power, "POWER", MetricFormat.Watts, 160, 35, settings, palette, now, 1.2),
+            Create(HardwareMetrics.GpuHotSpotTemperature, "GPU HOTSPOT", MetricFormat.Temperature, 64, 4, settings, palette, now, 2.1),
         ];
     }
 
     public IReadOnlyList<MetricTileViewModel> Metrics { get; }
+
+    public string AlertText => "⚠ CPU THROTTLING   ⚠ WHEA HARDWARE ERROR";
 
     private static MetricTileViewModel Create(
         HardwareMetrics metric,

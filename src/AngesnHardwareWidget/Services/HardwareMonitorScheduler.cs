@@ -120,7 +120,7 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     }
 
     /// <summary>
-    /// Samples every metric as soon as possible, without waiting for anything to fall due. Backs
+    /// Samples every enabled metric as soon as possible, without waiting for anything to fall due. Backs
     /// the Refresh action on the widget's menu and the tray icon.
     /// </summary>
     public void RequestImmediateRead()
@@ -200,7 +200,11 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
     private async Task RunAsync(AppSettings settings, CancellationToken cancellationToken)
     {
         // Every metric starts due, which gives the required immediate first read.
-        var dueAt = HardwareMetricsExtensions.Individual.ToDictionary(metric => metric, _ => 0L);
+        var enabledMask = settings.ResolveCollectedMetrics();
+        var enabledMetrics = HardwareMetricsExtensions.Individual
+            .Where(metric => enabledMask.Includes(metric))
+            .ToList();
+        var dueAt = enabledMetrics.ToDictionary(metric => metric, _ => 0L);
 
         var clock = Stopwatch.StartNew();
         var idleThreshold = TimeSpan.FromSeconds(settings.IdleAfterSeconds);
@@ -220,7 +224,7 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 _monitor.Rediscover();
 
                 // Read everything straight after a rediscovery so the UI recovers immediately.
-                foreach (var metric in HardwareMetricsExtensions.Individual)
+                foreach (var metric in enabledMetrics)
                 {
                     dueAt[metric] = 0L;
                 }
@@ -234,7 +238,11 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 // instead would restart every metric's countdown from the moment of the refresh,
                 // so repeatedly pressing Refresh would drag the whole cadence along with it. The
                 // schedule is the user's setting; a manual refresh is not a reschedule.
-                await RunCycleAsync(HardwareMetrics.All, cancellationToken).ConfigureAwait(false);
+                var enabled = enabledMetrics.Aggregate(HardwareMetrics.None, (mask, metric) => mask | metric);
+                if (enabled != HardwareMetrics.None)
+                {
+                    await RunCycleAsync(enabled, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             // Intervals are resolved per cycle rather than once up front, because the idle
@@ -252,7 +260,7 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 // stale as the idle interval, and the user is looking at them again.
                 if (!isIdle)
                 {
-                    foreach (var metric in HardwareMetricsExtensions.Individual)
+                    foreach (var metric in enabledMetrics)
                     {
                         dueAt[metric] = 0L;
                     }
@@ -278,7 +286,7 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                 // Schedule from the completion of the read rather than from its start, so a slow
                 // read cannot make the loop spin with a permanently overdue metric.
                 var completedAt = clock.ElapsedMilliseconds;
-                foreach (var metric in HardwareMetricsExtensions.Individual)
+                foreach (var metric in enabledMetrics)
                 {
                     if (due.Includes(metric))
                     {
@@ -286,6 +294,20 @@ public sealed class HardwareMonitorScheduler : IAsyncDisposable
                             + ((long)settings.ResolveIntervalSeconds(metric, isIdle) * 1000L);
                     }
                 }
+            }
+
+            if (dueAt.Count == 0)
+            {
+                try
+                {
+                    await _wake.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                continue;
             }
 
             var nextDueAt = dueAt.Values.Min();

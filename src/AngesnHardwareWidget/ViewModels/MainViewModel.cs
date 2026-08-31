@@ -7,14 +7,21 @@ using AngesnHardwareWidget.Settings;
 namespace AngesnHardwareWidget.ViewModels;
 
 /// <summary>
-/// The widget's state. Holds the raw nullable numbers and exposes the eight display rows; all
+/// The widget's state. Holds the raw nullable numbers and exposes the display rows; all
 /// formatting and colouring happens here in the presentation layer, never in the hardware service.
 /// </summary>
 public sealed class MainViewModel : ObservableObject
 {
+    private const double CpuThrottleTemperature = 90d;
+    private const double GpuCoreThrottleTemperature = 95d;
+    private const double GpuHotSpotThrottleTemperature = 110d;
+
     private readonly Dispatcher _dispatcher;
     private readonly SettingsService _settings;
     private readonly Dictionary<HardwareMetrics, MetricTileViewModel> _tiles;
+    private readonly Dictionary<string, MetricTileViewModel> _sensorTiles = [];
+    private readonly Dictionary<string, string> _sensorIds = [];
+    private readonly Dictionary<string, double?> _sensorValues = [];
 
     private AppSettings _current;
     private MetricStagePalette _palette;
@@ -29,9 +36,20 @@ public sealed class MainViewModel : ObservableObject
     private double? _gpuMemoryUsagePercent;
     private double? _gpuMemoryTemperature;
     private double? _gpuFanRpm;
+    private double? _motherboardTemperature;
+    private double? _memoryTemperature;
+    private double? _cpuFanRpm;
+    private double? _storageTemperature;
+    private double? _powerWatts;
+    private double? _cpuPowerWatts;
+    private double? _gpuPowerWatts;
+    private double? _gpuHotSpotTemperature;
+    private bool _hasWheaHardwareError;
+    private string _alertText = string.Empty;
 
     public MainViewModel(
         SettingsService settings,
+        HardwareSensorCatalog sensorCatalog,
         Dispatcher dispatcher,
         Action openSettings,
         Action refresh,
@@ -48,20 +66,32 @@ public sealed class MainViewModel : ObservableObject
 
         _tiles = new Dictionary<HardwareMetrics, MetricTileViewModel>
         {
-            [HardwareMetrics.CpuTemperature] = new(HardwareMetrics.CpuTemperature, "CPU TEMP", MetricFormat.Temperature),
-            [HardwareMetrics.CpuUsage] = new(HardwareMetrics.CpuUsage, "CPU USE", MetricFormat.Percent),
-            [HardwareMetrics.MemoryUsage] = new(HardwareMetrics.MemoryUsage, "RAM", MetricFormat.Memory),
-            [HardwareMetrics.GpuTemperature] = new(HardwareMetrics.GpuTemperature, "GPU TEMP", MetricFormat.Temperature),
-            [HardwareMetrics.GpuComputeUsage] = new(HardwareMetrics.GpuComputeUsage, "GPU CORE", MetricFormat.Percent),
-            [HardwareMetrics.GpuMemoryUsage] = new(HardwareMetrics.GpuMemoryUsage, "GPU MEM", MetricFormat.Percent),
-            [HardwareMetrics.GpuMemoryTemperature] = new(HardwareMetrics.GpuMemoryTemperature, "VRAM TEMP", MetricFormat.Temperature),
-            [HardwareMetrics.GpuFan] = new(HardwareMetrics.GpuFan, "GPU FAN", MetricFormat.Rpm),
+            [HardwareMetrics.CpuTemperature] = new(HardwareMetrics.CpuTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.CpuTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.CpuUsage] = new(HardwareMetrics.CpuUsage, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.CpuUsage), MetricFormat.Percent),
+            [HardwareMetrics.MemoryUsage] = new(HardwareMetrics.MemoryUsage, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.MemoryUsage), MetricFormat.Memory),
+            [HardwareMetrics.GpuTemperature] = new(HardwareMetrics.GpuTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.GpuComputeUsage] = new(HardwareMetrics.GpuComputeUsage, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuComputeUsage), MetricFormat.Percent),
+            [HardwareMetrics.GpuMemoryUsage] = new(HardwareMetrics.GpuMemoryUsage, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuMemoryUsage), MetricFormat.Percent),
+            [HardwareMetrics.GpuMemoryTemperature] = new(HardwareMetrics.GpuMemoryTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuMemoryTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.GpuFan] = new(HardwareMetrics.GpuFan, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuFan), MetricFormat.Rpm),
+            [HardwareMetrics.MotherboardTemperature] = new(HardwareMetrics.MotherboardTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.MotherboardTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.MemoryTemperature] = new(HardwareMetrics.MemoryTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.MemoryTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.CpuFan] = new(HardwareMetrics.CpuFan, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.CpuFan), MetricFormat.Rpm),
+            [HardwareMetrics.StorageTemperature] = new(HardwareMetrics.StorageTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.StorageTemperature), MetricFormat.Temperature),
+            [HardwareMetrics.Power] = new(HardwareMetrics.Power, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.Power), MetricFormat.Watts),
+            [HardwareMetrics.CpuPower] = new(HardwareMetrics.CpuPower, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.CpuPower), MetricFormat.Watts),
+            [HardwareMetrics.GpuPower] = new(HardwareMetrics.GpuPower, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuPower), MetricFormat.Watts),
+            [HardwareMetrics.GpuHotSpotTemperature] = new(HardwareMetrics.GpuHotSpotTemperature, MetricTypes.DefaultDisplayNameOf(HardwareMetrics.GpuHotSpotTemperature), MetricFormat.Temperature),
         };
+
+        AddSensorTiles(sensorCatalog.DriveTemperatureSensors, SensorMetricKeys.Drive, HardwareMetrics.StorageTemperature, MetricFormat.Temperature);
+        AddSensorTiles(sensorCatalog.CpuFanSensors, SensorMetricKeys.CpuFan, HardwareMetrics.CpuFan, MetricFormat.Rpm);
 
         Metrics = [];
         ApplyPerTilePresentation();
         RebuildMetrics();
         RefreshAllTiles();
+        RefreshAlertText();
 
         _settings.SettingsChanged += (_, updated) => RunOnUi(() => ApplySettings(updated));
     }
@@ -99,6 +129,29 @@ public sealed class MainViewModel : ObservableObject
     public double? GpuMemoryTemperature => _gpuMemoryTemperature;
 
     public double? GpuFanRpm => _gpuFanRpm;
+
+    public double? MotherboardTemperature => _motherboardTemperature;
+
+    public double? MemoryTemperature => _memoryTemperature;
+
+    public double? CpuFanRpm => _cpuFanRpm;
+
+    public double? StorageTemperature => _storageTemperature;
+
+    public double? PowerWatts => _powerWatts;
+
+    public double? CpuPowerWatts => _cpuPowerWatts;
+
+    public double? GpuPowerWatts => _gpuPowerWatts;
+
+    public double? GpuHotSpotTemperature => _gpuHotSpotTemperature;
+
+    /// <summary>One compact, reserved status line at the bottom of the widget.</summary>
+    public string AlertText
+    {
+        get => _alertText;
+        private set => SetProperty(ref _alertText, value);
+    }
 
     // ----------------------------------------------------------------- update
 
@@ -178,7 +231,50 @@ public sealed class MainViewModel : ObservableObject
             RefreshTile(HardwareMetrics.GpuFan);
             RecordSample(HardwareMetrics.GpuFan, _gpuFanRpm, recordedAt);
         }
+
+        ApplyMetric(HardwareMetrics.MotherboardTemperature, snapshot.MotherboardTemperature, ref _motherboardTemperature, nameof(MotherboardTemperature), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.MemoryTemperature, snapshot.MemoryTemperature, ref _memoryTemperature, nameof(MemoryTemperature), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.CpuFan, snapshot.CpuFanRpm, ref _cpuFanRpm, nameof(CpuFanRpm), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.StorageTemperature, snapshot.StorageTemperature, ref _storageTemperature, nameof(StorageTemperature), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.Power, snapshot.PowerWatts, ref _powerWatts, nameof(PowerWatts), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.CpuPower, snapshot.CpuPowerWatts, ref _cpuPowerWatts, nameof(CpuPowerWatts), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.GpuPower, snapshot.GpuPowerWatts, ref _gpuPowerWatts, nameof(GpuPowerWatts), sampled, recordedAt);
+        ApplyMetric(HardwareMetrics.GpuHotSpotTemperature, snapshot.GpuHotSpotTemperature, ref _gpuHotSpotTemperature, nameof(GpuHotSpotTemperature), sampled, recordedAt);
+        ApplySensorMetrics(snapshot, sampled, recordedAt);
+
+        RefreshAlertText();
     });
+
+    /// <summary>WHEA errors are sticky for this app session once Windows reports one.</summary>
+    public void ApplyWheaHardwareError(bool detected) => RunOnUi(() =>
+    {
+        if (!detected || _hasWheaHardwareError)
+        {
+            return;
+        }
+
+        _hasWheaHardwareError = true;
+        RefreshAlertText();
+    });
+
+    private void ApplyMetric(
+        HardwareMetrics metric,
+        double? value,
+        ref double? field,
+        string propertyName,
+        HardwareMetrics sampled,
+        DateTimeOffset recordedAt)
+    {
+        if (!sampled.Includes(metric))
+        {
+            return;
+        }
+
+        field = value;
+        OnPropertyChanged(propertyName);
+        RefreshTile(metric);
+        RecordSample(metric, value, recordedAt);
+    }
 
     private void ApplySettings(AppSettings updated)
     {
@@ -188,6 +284,7 @@ public sealed class MainViewModel : ObservableObject
         ApplyPerTilePresentation();
         RebuildMetrics();
         RefreshAllTiles();
+        RefreshAlertText();
     }
 
     /// <summary>
@@ -209,8 +306,16 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var (metric, tile) in _tiles)
         {
+            tile.Label = _current.ResolveDisplayName(metric);
             tile.ShowGraph = _current.IsGraphVisible(metric);
             tile.ValueColumnWidth = metric == HardwareMetrics.MemoryUsage ? ramValueColumnWidth : valueColumnWidth;
+        }
+
+        foreach (var (key, tile) in _sensorTiles)
+        {
+            tile.Label = _current.ResolveDisplayName(key, tile.Label);
+            tile.ShowGraph = _current.IsGraphVisible(key);
+            tile.ValueColumnWidth = valueColumnWidth;
         }
     }
 
@@ -221,18 +326,31 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void RebuildMetrics()
     {
-        var desired = _current.ResolveDisplayOrder();
+        var standardKeys = _current.ResolveDisplayOrder()
+            .Where(metric => metric is not HardwareMetrics.CpuFan and not HardwareMetrics.StorageTemperature)
+            .Where(metric => _current.ConsolidatePower
+                ? metric is not HardwareMetrics.CpuPower and not HardwareMetrics.GpuPower
+                : metric != HardwareMetrics.Power)
+            .Select(MetricTypes.DisplayKeyOf);
+        var desired = _current.MetricDisplay
+            .Where(entry => entry.Visible)
+            .Select(entry => entry.MetricType)
+            .Where(key => standardKeys.Contains(key) || _sensorTiles.ContainsKey(key))
+            .Select(key => _sensorTiles.TryGetValue(key, out var sensorTile)
+                ? sensorTile
+                : _tiles[HardwareMetricsExtensions.Individual.Single(metric => MetricTypes.DisplayKeyOf(metric) == key)])
+            .ToList();
 
         if (Metrics.Count == desired.Count
-            && !Metrics.Where((tile, index) => tile.Metric != desired[index]).Any())
+            && !Metrics.Where((tile, index) => !ReferenceEquals(tile, desired[index])).Any())
         {
             return;
         }
 
         Metrics.Clear();
-        foreach (var metric in desired)
+        foreach (var tile in desired)
         {
-            Metrics.Add(_tiles[metric]);
+            Metrics.Add(tile);
         }
     }
 
@@ -241,6 +359,11 @@ public sealed class MainViewModel : ObservableObject
         foreach (var metric in HardwareMetricsExtensions.Individual)
         {
             RefreshTile(metric);
+        }
+
+        foreach (var (key, tile) in _sensorTiles)
+        {
+            RefreshSensorTile(key, tile, _sensorValues.GetValueOrDefault(key));
         }
     }
 
@@ -274,11 +397,85 @@ public sealed class MainViewModel : ObservableObject
         HardwareMetrics.GpuMemoryUsage => _gpuMemoryUsagePercent,
         HardwareMetrics.GpuMemoryTemperature => _gpuMemoryTemperature,
         HardwareMetrics.GpuFan => _gpuFanRpm,
+        HardwareMetrics.MotherboardTemperature => _motherboardTemperature,
+        HardwareMetrics.MemoryTemperature => _memoryTemperature,
+        HardwareMetrics.CpuFan => _cpuFanRpm,
+        HardwareMetrics.StorageTemperature => _storageTemperature,
+        HardwareMetrics.Power => _powerWatts,
+        HardwareMetrics.CpuPower => _cpuPowerWatts,
+        HardwareMetrics.GpuPower => _gpuPowerWatts,
+        HardwareMetrics.GpuHotSpotTemperature => _gpuHotSpotTemperature,
         _ => null,
     };
 
+    private void RefreshAlertText()
+    {
+        var alerts = new List<string>(3);
+        if (_current.IsVisible(HardwareMetrics.CpuTemperature)
+            && _cpuTemperature is >= CpuThrottleTemperature)
+        {
+            alerts.Add("⚠ CPU THROTTLING");
+        }
+
+        if ((_current.IsVisible(HardwareMetrics.GpuHotSpotTemperature)
+                && _gpuHotSpotTemperature is >= GpuHotSpotThrottleTemperature)
+            || (_current.IsVisible(HardwareMetrics.GpuTemperature)
+                && _gpuTemperature is >= GpuCoreThrottleTemperature))
+        {
+            alerts.Add("⚠ GPU THROTTLING");
+        }
+
+        if (_hasWheaHardwareError)
+        {
+            alerts.Add("⚠ WHEA HARDWARE ERROR");
+        }
+
+        AlertText = string.Join("   ", alerts);
+    }
+
     private void RecordSample(HardwareMetrics metric, double? value, DateTimeOffset recordedAt) =>
         _tiles[metric].RecordSample(value, recordedAt);
+
+    private void AddSensorTiles(
+        IEnumerable<HardwareSensorOption> sensors,
+        Func<string, string> keyOf,
+        HardwareMetrics metric,
+        MetricFormat format)
+    {
+        foreach (var sensor in sensors)
+        {
+            var key = keyOf(sensor.Id);
+            _sensorIds[key] = sensor.Id;
+            _sensorTiles[key] = new MetricTileViewModel(metric, sensor.Label, format);
+        }
+    }
+
+    private void ApplySensorMetrics(HardwareSnapshot snapshot, HardwareMetrics sampled, DateTimeOffset recordedAt)
+    {
+        foreach (var (key, sensorId) in _sensorIds)
+        {
+            var applicable = SensorMetricKeys.IsDrive(key)
+                ? sampled.Includes(HardwareMetrics.StorageTemperature)
+                : sampled.Includes(HardwareMetrics.CpuFan);
+            if (!applicable)
+            {
+                continue;
+            }
+
+            var value = snapshot.SensorValues.GetValueOrDefault(sensorId);
+            _sensorValues[key] = value;
+            RefreshSensorTile(key, _sensorTiles[key], value);
+            _sensorTiles[key].RecordSample(value, recordedAt);
+        }
+    }
+
+    private void RefreshSensorTile(string key, MetricTileViewModel tile, double? value)
+    {
+        var defaultMetricType = SensorMetricKeys.IsDrive(key)
+            ? MetricTypes.StorageTemperature
+            : MetricTypes.CpuFanRpm;
+        tile.Update(value, _current.ResolveStages(key, defaultMetricType), _palette);
+    }
 
     private void RunOnUi(Action action)
     {

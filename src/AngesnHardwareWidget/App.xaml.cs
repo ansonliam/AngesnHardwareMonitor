@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
+using AngesnHardwareWidget.Models;
 using AngesnHardwareWidget.Services;
 using AngesnHardwareWidget.Settings;
 using AngesnHardwareWidget.ViewModels;
@@ -23,6 +24,8 @@ public partial class App : Application, IApplicationController
     private SettingsWindow? _settingsWindow;
     private AppSettings? _activeSchedule;
     private SingleInstanceService? _singleInstance;
+    private WheaHardwareErrorMonitor? _wheaMonitor;
+    private DispatcherTimer? _hardwareAlertTimer;
     private bool _exiting;
 
     protected override void OnStartup(StartupEventArgs eventArgs)
@@ -51,7 +54,7 @@ public partial class App : Application, IApplicationController
 
         _settings = new SettingsService();
         _activeSchedule = _settings.Current;
-        _monitor = new LibreHardwareMonitorService();
+        _monitor = new LibreHardwareMonitorService(_settings);
 
         // Initialization can fail on a locked-down machine or without the kernel driver; the widget
         // must still come up and show "--" rather than refusing to start.
@@ -64,13 +67,28 @@ public partial class App : Application, IApplicationController
             AppLog.Error("LibreHardwareMonitor initialization failed; the widget will run degraded", exception);
         }
 
+        EnsureSensorMetricRows(_settings, _monitor.GetSensorCatalog());
+        _activeSchedule = _settings.Current;
+
         _scheduler = new HardwareMonitorScheduler(_monitor, _settings);
 
         _widget = new MainWindow(_settings);
-        _mainViewModel = new MainViewModel(_settings, Dispatcher, ShowSettings, RefreshNow, ExitApplication);
+        _mainViewModel = new MainViewModel(
+            _settings,
+            _monitor.GetSensorCatalog(),
+            Dispatcher,
+            ShowSettings,
+            RefreshNow,
+            ExitApplication);
         _widget.DataContext = _mainViewModel;
         MainWindow = _widget;
         _widget.Show();
+
+        _wheaMonitor = new WheaHardwareErrorMonitor();
+        _hardwareAlertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _hardwareAlertTimer.Tick += (_, _) =>
+            _mainViewModel.ApplyWheaHardwareError(_wheaMonitor.Poll());
+        _hardwareAlertTimer.Start();
 
         _scheduler.SnapshotAvailable += (_, snapshot) => _mainViewModel.Apply(snapshot);
         _settings.SettingsChanged += OnSettingsChanged;
@@ -92,6 +110,7 @@ public partial class App : Application, IApplicationController
         AppLog.Info("Angesn Hardware Widget shutting down.");
 
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        _hardwareAlertTimer?.Stop();
 
         if (_scheduler is not null)
         {
@@ -138,7 +157,9 @@ public partial class App : Application, IApplicationController
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_settings);
+        var sensorCatalog = _monitor?.GetSensorCatalog()
+            ?? new HardwareSensorCatalog([], []);
+        _settingsWindow = new SettingsWindow(_settings, sensorCatalog);
 
         // Only own the settings window while the widget is actually on screen: an owner that is
         // hidden would take the dialog with it.
@@ -176,6 +197,13 @@ public partial class App : Application, IApplicationController
             return;
         }
 
+        var sensorSelectionChanged = _activeSchedule is not null
+            && !_activeSchedule.HasSameSensorSelection(updated);
+        if (sensorSelectionChanged)
+        {
+            _scheduler.RequestRediscovery();
+        }
+
         if (_activeSchedule is not null && _activeSchedule.HasSamePollingSchedule(updated))
         {
             _activeSchedule = updated;
@@ -184,6 +212,60 @@ public partial class App : Application, IApplicationController
 
         _activeSchedule = updated;
         _ = _scheduler.RestartAsync();
+    }
+
+    private static void EnsureSensorMetricRows(SettingsService settings, HardwareSensorCatalog catalog)
+    {
+        var updated = settings.Current;
+        var changed = false;
+
+        // The former aggregate rows have been superseded by one row per detected source.
+        foreach (var metric in new[] { HardwareMetrics.CpuFan, HardwareMetrics.StorageTemperature })
+        {
+            var entry = updated.MetricDisplay.FirstOrDefault(item => item.MetricType == MetricTypes.DisplayKeyOf(metric));
+            if (entry is not null && entry.Visible)
+            {
+                entry.Visible = false;
+                changed = true;
+            }
+        }
+
+        changed |= AddSensorRows(updated, catalog.DriveTemperatureSensors, SensorMetricKeys.Drive);
+        changed |= AddSensorRows(updated, catalog.CpuFanSensors, SensorMetricKeys.CpuFan);
+
+        if (changed)
+        {
+            settings.Save(updated);
+        }
+    }
+
+    private static bool AddSensorRows(
+        AppSettings settings,
+        IEnumerable<HardwareSensorOption> sensors,
+        Func<string, string> keyOf)
+    {
+        var changed = false;
+        foreach (var sensor in sensors)
+        {
+            var key = keyOf(sensor.Id);
+            if (settings.MetricDisplay.Any(entry => entry.MetricType == key))
+            {
+                continue;
+            }
+
+            settings.MetricDisplay.Add(new Settings.MetricDisplaySettings
+            {
+                MetricType = key,
+                DisplayName = sensor.Label,
+                Visible = true,
+                ShowGraph = true,
+            });
+            settings.MetricStages[key] = MetricStageSettings.Default(
+                SensorMetricKeys.IsDrive(key) ? MetricTypes.StorageTemperature : MetricTypes.CpuFanRpm);
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>

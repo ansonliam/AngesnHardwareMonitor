@@ -33,6 +33,7 @@
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="MahApps.Metro" Version="2.4.11" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

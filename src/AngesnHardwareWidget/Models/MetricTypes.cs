@@ -18,6 +18,14 @@ public static class MetricTypes
     public const string GpuMemoryUsage = "gpu.memory_usage";
     public const string GpuMemoryTemperature = "gpu.memory_temperature";
     public const string GpuFanRpm = "gpu.fan_rpm";
+    public const string MotherboardTemperature = "motherboard.temperature";
+    public const string MemoryTemperature = "memory.temperature";
+    public const string CpuFanRpm = "cpu.fan_rpm";
+    public const string StorageTemperature = "storage.temperature";
+    public const string Power = "system.cpu_gpu_power";
+    public const string CpuPower = "cpu.power";
+    public const string GpuPower = "gpu.power";
+    public const string GpuHotSpotTemperature = "gpu.hotspot_temperature";
 
     /// <summary>Optional raw VRAM capacity metrics, persisted when the GPU exposes them.</summary>
     public const string GpuMemoryUsedMb = "gpu.memory_used_mb";
@@ -41,6 +49,35 @@ public static class MetricTypes
         HardwareMetrics.GpuMemoryUsage => GpuMemoryUsage,
         HardwareMetrics.GpuMemoryTemperature => GpuMemoryTemperature,
         HardwareMetrics.GpuFan => GpuFanRpm,
+        HardwareMetrics.MotherboardTemperature => MotherboardTemperature,
+        HardwareMetrics.MemoryTemperature => MemoryTemperature,
+        HardwareMetrics.CpuFan => CpuFanRpm,
+        HardwareMetrics.StorageTemperature => StorageTemperature,
+        HardwareMetrics.Power => Power,
+        HardwareMetrics.CpuPower => CpuPower,
+        HardwareMetrics.GpuPower => GpuPower,
+        HardwareMetrics.GpuHotSpotTemperature => GpuHotSpotTemperature,
+        _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "Not a displayed metric."),
+    };
+
+    public static string DefaultDisplayNameOf(HardwareMetrics metric) => metric switch
+    {
+        HardwareMetrics.CpuTemperature => "CPU TEMP",
+        HardwareMetrics.CpuUsage => "CPU USE",
+        HardwareMetrics.MemoryUsage => "RAM",
+        HardwareMetrics.GpuTemperature => "GPU TEMP",
+        HardwareMetrics.GpuComputeUsage => "GPU CORE",
+        HardwareMetrics.GpuMemoryUsage => "GPU MEM",
+        HardwareMetrics.GpuMemoryTemperature => "VRAM TEMP",
+        HardwareMetrics.GpuFan => "GPU FAN",
+        HardwareMetrics.MotherboardTemperature => "MB TEMP",
+        HardwareMetrics.MemoryTemperature => "RAM TEMP",
+        HardwareMetrics.CpuFan => "CPU FAN",
+        HardwareMetrics.StorageTemperature => "DRIVE TEMP",
+        HardwareMetrics.Power => "POWER",
+        HardwareMetrics.CpuPower => "CPU POWER",
+        HardwareMetrics.GpuPower => "GPU POWER",
+        HardwareMetrics.GpuHotSpotTemperature => "GPU HOTSPOT",
         _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "Not a displayed metric."),
     };
 }

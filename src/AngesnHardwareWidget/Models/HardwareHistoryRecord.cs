@@ -15,7 +15,15 @@ public sealed record HardwareHistoryRecord(
     double? GpuComputeUsagePercent,
     double? GpuMemoryUsagePercent,
     double? GpuMemoryTemperature,
-    double? GpuFanRpm)
+    double? GpuFanRpm,
+    double? MotherboardTemperature,
+    double? MemoryTemperature,
+    double? CpuFanRpm,
+    double? StorageTemperature,
+    double? PowerWatts,
+    double? GpuHotSpotTemperature,
+    double? CpuPowerWatts,
+    double? GpuPowerWatts)
 {
     /// <summary>Which metrics were sampled this cycle. Metrics outside this set were not due and
     /// are not written at all, so future charts never mistake a stale repeat for a new sample.</summary>
@@ -42,7 +50,15 @@ public sealed record HardwareHistoryRecord(
             snapshot.GpuComputeUsagePercent,
             snapshot.GpuMemoryUsagePercent,
             snapshot.GpuMemoryTemperature,
-            snapshot.GpuFanRpm)
+            snapshot.GpuFanRpm,
+            snapshot.MotherboardTemperature,
+            snapshot.MemoryTemperature,
+            snapshot.CpuFanRpm,
+            snapshot.StorageTemperature,
+            snapshot.PowerWatts,
+            snapshot.GpuHotSpotTemperature,
+            snapshot.CpuPowerWatts,
+            snapshot.GpuPowerWatts)
         {
             SampledMetrics = snapshot.SampledMetrics,
             CpuDeviceId = snapshot.CpuDeviceId,

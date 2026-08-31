@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using AngesnHardwareWidget.Services;
 using AngesnHardwareWidget.ViewModels;
+using AngesnHardwareWidget.Models;
 
 namespace AngesnHardwareWidget.Views;
 
@@ -17,10 +18,10 @@ public partial class SettingsWindow : Window
 {
     private const string RowDataFormat = "AngesnHardwareWidget.MetricStageRow";
 
-    public SettingsWindow(SettingsService settings)
+    public SettingsWindow(SettingsService settings, HardwareSensorCatalog sensorCatalog)
     {
         InitializeComponent();
-        DataContext = new SettingsViewModel(settings, Close);
+        DataContext = new SettingsViewModel(settings, sensorCatalog, Close);
     }
 
     private SettingsViewModel? ViewModel => DataContext as SettingsViewModel;

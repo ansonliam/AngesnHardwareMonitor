@@ -4,8 +4,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:AngesnHardwareWidget.ViewModels"
     Title="Angesn Hardware Monitoring"
-    Width="620"
-    Height="760"
+    Width="800"
+    Height="900"
     MinWidth="580"
     MinHeight="420"
     Background="#FFF7F8FA"
@@ -126,10 +126,11 @@
 
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -139,6 +140,7 @@
                     <TextBlock
                         Grid.Row="0"
                         Grid.Column="0"
+                        Margin="0,0,8,0"
                         Style="{StaticResource RowLabel}"
                         Text="Widget appearance" />
                     <ComboBox
@@ -197,13 +199,13 @@
                 -->
                 <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="auto" />
                         <ColumnDefinition Width="1.3*" />
                         <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="auto" />
                         <ColumnDefinition Width="1.3*" />
                         <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="auto" />
                         <ColumnDefinition Width="1.3*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
@@ -368,8 +370,12 @@
                 <TextBlock
                     Margin="0,0,0,6"
                     Style="{StaticResource HintText}"
-                    Text="Applies immediately. Untick Show to hide a metric from the widget entirely, or untick Graph to keep its label and value but drop just the history sparkline. Drag the grip to reorder — the widget follows this order. Each metric is graded over its own scale rather than 0–100, because a CPU is never near 0 °C and fan RPM is not a percentage. Enter the upper bound of stages 1 to 4; stage 5 is everything above stage 4." />
+                    Text="Applies immediately. Untick Show to hide a metric and stop its polling and history collection. Edit its name to rename the widget row. Untick Graph to keep the label and value but hide the sparkline. Drag the grip to reorder. Enter the upper bound of stages 1 to 4; stage 5 is everything above stage 4." />
 
+                <CheckBox
+                    Margin="0,0,0,12"
+                    Content="Consolidate CPU and GPU power into one POWER row"
+                    IsChecked="{Binding ConsolidatePower}" />
                 <StackPanel Margin="0,4,0,10" Orientation="Horizontal">
                     <Border
                         Width="20"
@@ -401,11 +407,13 @@
                         Margin="0,0,8,0"
                         Background="#FF4D4F"
                         CornerRadius="2" />
+
                     <TextBlock
                         VerticalAlignment="Center"
                         Style="{StaticResource HintText}"
                         Text="stage 1 (healthy) to stage 5 (critical)" />
                 </StackPanel>
+
 
                 <!--
                     Mirrors the row template's own column layout exactly (grip, show, graph, metric,
@@ -531,7 +539,7 @@
                                     Margin="0,0,8,0"
                                     VerticalAlignment="Center"
                                     IsChecked="{Binding IsVisible}"
-                                    ToolTip="Show this metric in the widget" />
+                                    ToolTip="Show, poll and record history for this metric" />
 
                                 <CheckBox
                                     Grid.Column="2"
@@ -540,10 +548,12 @@
                                     IsChecked="{Binding IsGraphVisible}"
                                     ToolTip="Show this metric's history graph" />
 
-                                <TextBlock
+                                <TextBox
                                     Grid.Column="3"
-                                    Style="{StaticResource RowLabel}"
-                                    Text="{Binding Label}" />
+                                    Margin="2,0,8,0"
+                                    MaxLength="24"
+                                    Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
+                                    ToolTip="Name shown on the widget" />
 
                                 <StackPanel Grid.Column="4" Orientation="Horizontal">
                                     <TextBox Style="{StaticResource StageBox}" Text="{Binding Stage1Maximum, UpdateSourceTrigger=PropertyChanged}" />
@@ -584,6 +594,7 @@
                     Content="Use same polling interval for all"
                     IsChecked="{Binding UseUnifiedPollingInterval}" />
 
+
                 <Grid Visibility="{Binding UseUnifiedPollingInterval, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -610,6 +621,12 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -715,6 +732,73 @@
                         ItemsSource="{Binding IntervalOptions}"
                         SelectedItem="{Binding GpuFanInterval}"
                         Style="{StaticResource IntervalCombo}" />
+
+                    <TextBlock
+                        Grid.Row="8"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="Motherboard temperature" />
+                    <ComboBox
+                        Grid.Row="8"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding MotherboardTemperatureInterval}"
+                        Style="{StaticResource IntervalCombo}" />
+                    <TextBlock
+                        Grid.Row="9"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="RAM temperature" />
+                    <ComboBox
+                        Grid.Row="9"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding MemoryTemperatureInterval}"
+                        Style="{StaticResource IntervalCombo}" />
+                    <TextBlock
+                        Grid.Row="10"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="CPU fan" />
+                    <ComboBox
+                        Grid.Row="10"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding CpuFanInterval}"
+                        Style="{StaticResource IntervalCombo}" />
+                    <TextBlock
+                        Grid.Row="11"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="Drive temperature" />
+                    <ComboBox
+                        Grid.Row="11"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding StorageTemperatureInterval}"
+                        Style="{StaticResource IntervalCombo}" />
+                    <TextBlock
+                        Grid.Row="12"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="CPU + GPU power" />
+                    <ComboBox
+                        Grid.Row="12"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding PowerInterval}"
+                        Style="{StaticResource IntervalCombo}" />
+                    <TextBlock
+                        Grid.Row="13"
+                        Grid.Column="0"
+                        Style="{StaticResource RowLabel}"
+                        Text="GPU hotspot temperature" />
+                    <ComboBox
+                        Grid.Row="13"
+                        Grid.Column="1"
+                        ItemsSource="{Binding IntervalOptions}"
+                        SelectedItem="{Binding GpuHotSpotTemperatureInterval}"
+                        Style="{StaticResource IntervalCombo}" />
                 </Grid>
 
                 <Separator Margin="0,14,0,12" />
@@ -772,6 +856,12 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -876,6 +966,73 @@
                             Grid.Column="1"
                             ItemsSource="{Binding IdleIntervalOptions}"
                             SelectedItem="{Binding IdleGpuFanInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+
+                        <TextBlock
+                            Grid.Row="8"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="Motherboard temperature" />
+                        <ComboBox
+                            Grid.Row="8"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdleMotherboardTemperatureInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+                        <TextBlock
+                            Grid.Row="9"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="RAM temperature" />
+                        <ComboBox
+                            Grid.Row="9"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdleMemoryTemperatureInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+                        <TextBlock
+                            Grid.Row="10"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="CPU fan" />
+                        <ComboBox
+                            Grid.Row="10"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdleCpuFanInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+                        <TextBlock
+                            Grid.Row="11"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="Drive temperature" />
+                        <ComboBox
+                            Grid.Row="11"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdleStorageTemperatureInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+                        <TextBlock
+                            Grid.Row="12"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="CPU + GPU power" />
+                        <ComboBox
+                            Grid.Row="12"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdlePowerInterval}"
+                            Style="{StaticResource IntervalCombo}" />
+                        <TextBlock
+                            Grid.Row="13"
+                            Grid.Column="0"
+                            Style="{StaticResource RowLabel}"
+                            Text="GPU hotspot temperature" />
+                        <ComboBox
+                            Grid.Row="13"
+                            Grid.Column="1"
+                            ItemsSource="{Binding IdleIntervalOptions}"
+                            SelectedItem="{Binding IdleGpuHotSpotTemperatureInterval}"
                             Style="{StaticResource IntervalCombo}" />
                     </Grid>
                 </StackPanel>

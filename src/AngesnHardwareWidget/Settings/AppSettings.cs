@@ -103,6 +103,9 @@ public sealed class AppSettings
 
     public bool UseUnifiedPollingInterval { get; set; } = true;
 
+    /// <summary>Show CPU and GPU power as one combined widget row instead of two rows.</summary>
+    public bool ConsolidatePower { get; set; }
+
     public int UnifiedPollingSeconds { get; set; } = DefaultPollingSeconds;
 
     /// <summary>Presentation only. Never affects what is collected or stored in history.</summary>
@@ -151,6 +154,18 @@ public sealed class AppSettings
     public int GpuMemoryUsagePollingSeconds { get; set; } = DefaultPollingSeconds;
     public int GpuMemoryTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
     public int GpuFanPollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int MotherboardTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int MemoryTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int CpuFanPollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int StorageTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int PowerPollingSeconds { get; set; } = DefaultPollingSeconds;
+    public int GpuHotSpotTemperaturePollingSeconds { get; set; } = DefaultPollingSeconds;
+
+    /// <summary>Empty means automatic sensor selection.</summary>
+    public string StorageTemperatureSensorId { get; set; } = string.Empty;
+
+    /// <summary>Empty means automatic sensor selection.</summary>
+    public string CpuFanSensorId { get; set; } = string.Empty;
 
     /// <summary>
     /// Poll more slowly once the machine has had no keyboard or mouse input for
@@ -172,6 +187,12 @@ public sealed class AppSettings
     public int IdleGpuMemoryUsagePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
     public int IdleGpuMemoryTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
     public int IdleGpuFanPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleMotherboardTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleMemoryTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleCpuFanPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleStorageTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdlePowerPollingSeconds { get; set; } = DefaultIdlePollingSeconds;
+    public int IdleGpuHotSpotTemperaturePollingSeconds { get; set; } = DefaultIdlePollingSeconds;
 
     /// <summary>"Retro" or "Default", matching the AI Usage Monitor's widget appearances.</summary>
     public string WidgetAppearance { get; set; } = RetroAppearance;
@@ -251,6 +272,14 @@ public sealed class AppSettings
             HardwareMetrics.GpuMemoryUsage => GpuMemoryUsagePollingSeconds,
             HardwareMetrics.GpuMemoryTemperature => GpuMemoryTemperaturePollingSeconds,
             HardwareMetrics.GpuFan => GpuFanPollingSeconds,
+            HardwareMetrics.MotherboardTemperature => MotherboardTemperaturePollingSeconds,
+            HardwareMetrics.MemoryTemperature => MemoryTemperaturePollingSeconds,
+            HardwareMetrics.CpuFan => CpuFanPollingSeconds,
+            HardwareMetrics.StorageTemperature => StorageTemperaturePollingSeconds,
+            HardwareMetrics.Power => PowerPollingSeconds,
+            HardwareMetrics.GpuHotSpotTemperature => GpuHotSpotTemperaturePollingSeconds,
+            HardwareMetrics.CpuPower => PowerPollingSeconds,
+            HardwareMetrics.GpuPower => PowerPollingSeconds,
             _ => DefaultPollingSeconds,
         });
     }
@@ -266,13 +295,20 @@ public sealed class AppSettings
         HardwareMetrics.GpuMemoryUsage => IdleGpuMemoryUsagePollingSeconds,
         HardwareMetrics.GpuMemoryTemperature => IdleGpuMemoryTemperaturePollingSeconds,
         HardwareMetrics.GpuFan => IdleGpuFanPollingSeconds,
+        HardwareMetrics.MotherboardTemperature => IdleMotherboardTemperaturePollingSeconds,
+        HardwareMetrics.MemoryTemperature => IdleMemoryTemperaturePollingSeconds,
+        HardwareMetrics.CpuFan => IdleCpuFanPollingSeconds,
+        HardwareMetrics.StorageTemperature => IdleStorageTemperaturePollingSeconds,
+        HardwareMetrics.Power => IdlePowerPollingSeconds,
+        HardwareMetrics.GpuHotSpotTemperature => IdleGpuHotSpotTemperaturePollingSeconds,
+        HardwareMetrics.CpuPower => IdlePowerPollingSeconds,
+        HardwareMetrics.GpuPower => IdlePowerPollingSeconds,
         _ => DefaultIdlePollingSeconds,
     };
 
     /// <summary>
-    /// The metrics the widget should show, in display order. Falls back to the full default order
-    /// if every metric has somehow been hidden, because an empty widget is not a useful state to
-    /// leave someone stuck in.
+    /// The metrics the widget should show and collect, in display order. An empty list is valid:
+    /// unticking Show deliberately stops polling and history collection for that metric.
     /// </summary>
     public IReadOnlyList<HardwareMetrics> ResolveDisplayOrder()
     {
@@ -288,7 +324,37 @@ public sealed class AppSettings
             }
         }
 
-        return ordered.Count > 0 ? ordered : HardwareMetricsExtensions.Individual;
+        return ordered;
+    }
+
+    /// <summary>The physical metric groups that need polling for the currently visible rows.</summary>
+    public HardwareMetrics ResolveCollectedMetrics()
+    {
+        var known = HardwareMetricsExtensions.Individual.ToDictionary(MetricTypes.DisplayKeyOf, metric => metric);
+        var collected = HardwareMetrics.None;
+        foreach (var entry in MetricDisplay.Where(entry => entry.Visible))
+        {
+            if (known.TryGetValue(entry.MetricType, out var metric))
+            {
+                if ((metric == HardwareMetrics.Power && !ConsolidatePower)
+                    || ((metric == HardwareMetrics.CpuPower || metric == HardwareMetrics.GpuPower) && ConsolidatePower))
+                {
+                    continue;
+                }
+
+                collected |= metric;
+            }
+            else if (SensorMetricKeys.IsDrive(entry.MetricType))
+            {
+                collected |= HardwareMetrics.StorageTemperature;
+            }
+            else if (SensorMetricKeys.IsCpuFan(entry.MetricType))
+            {
+                collected |= HardwareMetrics.CpuFan;
+            }
+        }
+
+        return collected;
     }
 
     /// <summary>Whether one metric is shown in the widget. Unknown metrics default to visible.</summary>
@@ -307,6 +373,24 @@ public sealed class AppSettings
         return entry?.ShowGraph ?? true;
     }
 
+    public bool IsGraphVisible(string metricType) =>
+        MetricDisplay.FirstOrDefault(item => item.MetricType == metricType)?.ShowGraph ?? true;
+
+    public string ResolveDisplayName(HardwareMetrics metric)
+    {
+        var key = MetricTypes.DisplayKeyOf(metric);
+        var configured = MetricDisplay.FirstOrDefault(item => item.MetricType == key)?.DisplayName?.Trim();
+        return string.IsNullOrWhiteSpace(configured)
+            ? MetricTypes.DefaultDisplayNameOf(metric)
+            : configured;
+    }
+
+    public string ResolveDisplayName(string metricType, string fallback)
+    {
+        var configured = MetricDisplay.FirstOrDefault(item => item.MetricType == metricType)?.DisplayName?.Trim();
+        return string.IsNullOrWhiteSpace(configured) ? fallback : configured;
+    }
+
     /// <summary>Stage thresholds for a displayed metric, falling back to that metric's defaults.</summary>
     public MetricStageSettings ResolveStages(HardwareMetrics metric)
     {
@@ -315,6 +399,11 @@ public sealed class AppSettings
             ? stages
             : MetricStageSettings.Default(key);
     }
+
+    public MetricStageSettings ResolveStages(string metricType, string defaultMetricType) =>
+        MetricStages.TryGetValue(metricType, out var stages) && stages.IsValid()
+            ? stages
+            : MetricStageSettings.Default(defaultMetricType);
 
     public static bool IsValidInterval(int seconds) =>
         seconds is >= MinimumPollingSeconds and <= MaximumPollingSeconds;
@@ -350,6 +439,7 @@ public sealed class AppSettings
     /// </summary>
     public bool HasSamePollingSchedule(AppSettings other) =>
         UseUnifiedPollingInterval == other.UseUnifiedPollingInterval
+        && ConsolidatePower == other.ConsolidatePower
         && UnifiedPollingSeconds == other.UnifiedPollingSeconds
         && CpuTemperaturePollingSeconds == other.CpuTemperaturePollingSeconds
         && CpuUsagePollingSeconds == other.CpuUsagePollingSeconds
@@ -359,6 +449,12 @@ public sealed class AppSettings
         && GpuMemoryUsagePollingSeconds == other.GpuMemoryUsagePollingSeconds
         && GpuMemoryTemperaturePollingSeconds == other.GpuMemoryTemperaturePollingSeconds
         && GpuFanPollingSeconds == other.GpuFanPollingSeconds
+        && MotherboardTemperaturePollingSeconds == other.MotherboardTemperaturePollingSeconds
+        && MemoryTemperaturePollingSeconds == other.MemoryTemperaturePollingSeconds
+        && CpuFanPollingSeconds == other.CpuFanPollingSeconds
+        && StorageTemperaturePollingSeconds == other.StorageTemperaturePollingSeconds
+        && PowerPollingSeconds == other.PowerPollingSeconds
+        && GpuHotSpotTemperaturePollingSeconds == other.GpuHotSpotTemperaturePollingSeconds
         && UseIdlePolling == other.UseIdlePolling
         && IdleAfterSeconds == other.IdleAfterSeconds
         && IdleUnifiedPollingSeconds == other.IdleUnifiedPollingSeconds
@@ -369,7 +465,26 @@ public sealed class AppSettings
         && IdleGpuComputeUsagePollingSeconds == other.IdleGpuComputeUsagePollingSeconds
         && IdleGpuMemoryUsagePollingSeconds == other.IdleGpuMemoryUsagePollingSeconds
         && IdleGpuMemoryTemperaturePollingSeconds == other.IdleGpuMemoryTemperaturePollingSeconds
-        && IdleGpuFanPollingSeconds == other.IdleGpuFanPollingSeconds;
+        && IdleGpuFanPollingSeconds == other.IdleGpuFanPollingSeconds
+        && IdleMotherboardTemperaturePollingSeconds == other.IdleMotherboardTemperaturePollingSeconds
+        && IdleMemoryTemperaturePollingSeconds == other.IdleMemoryTemperaturePollingSeconds
+        && IdleCpuFanPollingSeconds == other.IdleCpuFanPollingSeconds
+        && IdleStorageTemperaturePollingSeconds == other.IdleStorageTemperaturePollingSeconds
+        && IdlePowerPollingSeconds == other.IdlePowerPollingSeconds
+        && IdleGpuHotSpotTemperaturePollingSeconds == other.IdleGpuHotSpotTemperaturePollingSeconds
+        && HardwareMetricsExtensions.Individual.All(metric => IsVisible(metric) == other.IsVisible(metric))
+        && MetricDisplay
+            .Where(entry => SensorMetricKeys.IsKnown(entry.MetricType))
+            .OrderBy(entry => entry.MetricType, StringComparer.Ordinal)
+            .Select(entry => (entry.MetricType, entry.Visible))
+            .SequenceEqual(other.MetricDisplay
+                .Where(entry => SensorMetricKeys.IsKnown(entry.MetricType))
+                .OrderBy(entry => entry.MetricType, StringComparer.Ordinal)
+                .Select(entry => (entry.MetricType, entry.Visible)));
+
+    public bool HasSameSensorSelection(AppSettings other) =>
+        string.Equals(StorageTemperatureSensorId, other.StorageTemperatureSensorId, StringComparison.Ordinal)
+        && string.Equals(CpuFanSensorId, other.CpuFanSensorId, StringComparison.Ordinal);
 
     public static string NormalizeAppearance(string? appearance) =>
         appearance == DefaultAppearance ? DefaultAppearance : RetroAppearance;
@@ -396,6 +511,14 @@ public sealed class AppSettings
         GpuMemoryUsagePollingSeconds = Clamp(GpuMemoryUsagePollingSeconds);
         GpuMemoryTemperaturePollingSeconds = Clamp(GpuMemoryTemperaturePollingSeconds);
         GpuFanPollingSeconds = Clamp(GpuFanPollingSeconds);
+        MotherboardTemperaturePollingSeconds = Clamp(MotherboardTemperaturePollingSeconds);
+        MemoryTemperaturePollingSeconds = Clamp(MemoryTemperaturePollingSeconds);
+        CpuFanPollingSeconds = Clamp(CpuFanPollingSeconds);
+        StorageTemperaturePollingSeconds = Clamp(StorageTemperaturePollingSeconds);
+        PowerPollingSeconds = Clamp(PowerPollingSeconds);
+        GpuHotSpotTemperaturePollingSeconds = Clamp(GpuHotSpotTemperaturePollingSeconds);
+        StorageTemperatureSensorId ??= string.Empty;
+        CpuFanSensorId ??= string.Empty;
 
         IdleAfterSeconds = Math.Clamp(IdleAfterSeconds, MinimumIdleAfterSeconds, MaximumIdleAfterSeconds);
         IdleUnifiedPollingSeconds = ClampIdle(IdleUnifiedPollingSeconds);
@@ -407,6 +530,12 @@ public sealed class AppSettings
         IdleGpuMemoryUsagePollingSeconds = ClampIdle(IdleGpuMemoryUsagePollingSeconds);
         IdleGpuMemoryTemperaturePollingSeconds = ClampIdle(IdleGpuMemoryTemperaturePollingSeconds);
         IdleGpuFanPollingSeconds = ClampIdle(IdleGpuFanPollingSeconds);
+        IdleMotherboardTemperaturePollingSeconds = ClampIdle(IdleMotherboardTemperaturePollingSeconds);
+        IdleMemoryTemperaturePollingSeconds = ClampIdle(IdleMemoryTemperaturePollingSeconds);
+        IdleCpuFanPollingSeconds = ClampIdle(IdleCpuFanPollingSeconds);
+        IdleStorageTemperaturePollingSeconds = ClampIdle(IdleStorageTemperaturePollingSeconds);
+        IdlePowerPollingSeconds = ClampIdle(IdlePowerPollingSeconds);
+        IdleGpuHotSpotTemperaturePollingSeconds = ClampIdle(IdleGpuHotSpotTemperaturePollingSeconds);
 
         WidgetAppearance = NormalizeAppearance(WidgetAppearance);
         WidgetFont = NormalizeFont(WidgetFont);
@@ -456,14 +585,25 @@ public sealed class AppSettings
         // Drop keys this build no longer knows, then append any metric the file has never seen, so
         // an older settings file picks up new metrics at the end instead of losing them.
         MetricDisplay = MetricDisplay
-            .Where(entry => knownKeys.Contains(entry.MetricType))
+            .Where(entry => entry is not null)
+            .Where(entry => knownKeys.Contains(entry.MetricType) || SensorMetricKeys.IsKnown(entry.MetricType))
             .GroupBy(entry => entry.MetricType)
             .Select(group => group.First())
             .ToList();
 
         foreach (var key in knownKeys.Where(key => MetricDisplay.All(entry => entry.MetricType != key)))
         {
-            MetricDisplay.Add(new MetricDisplaySettings { MetricType = key, Visible = true });
+            MetricDisplay.Add(new MetricDisplaySettings
+            {
+                MetricType = key,
+                // Per-drive and per-CPU-fan rows replace the two former aggregate rows.
+                Visible = key is not MetricTypes.CpuFanRpm and not MetricTypes.StorageTemperature,
+            });
+        }
+
+        foreach (var entry in MetricDisplay)
+        {
+            entry.DisplayName = entry.DisplayName?.Trim() ?? string.Empty;
         }
 
         return this;
@@ -490,6 +630,15 @@ public sealed class AppSettings
         GpuMemoryUsagePollingSeconds = GpuMemoryUsagePollingSeconds,
         GpuMemoryTemperaturePollingSeconds = GpuMemoryTemperaturePollingSeconds,
         GpuFanPollingSeconds = GpuFanPollingSeconds,
+        MotherboardTemperaturePollingSeconds = MotherboardTemperaturePollingSeconds,
+        MemoryTemperaturePollingSeconds = MemoryTemperaturePollingSeconds,
+        CpuFanPollingSeconds = CpuFanPollingSeconds,
+        StorageTemperaturePollingSeconds = StorageTemperaturePollingSeconds,
+        PowerPollingSeconds = PowerPollingSeconds,
+        ConsolidatePower = ConsolidatePower,
+        GpuHotSpotTemperaturePollingSeconds = GpuHotSpotTemperaturePollingSeconds,
+        StorageTemperatureSensorId = StorageTemperatureSensorId,
+        CpuFanSensorId = CpuFanSensorId,
         UseIdlePolling = UseIdlePolling,
         IdleAfterSeconds = IdleAfterSeconds,
         IdleUnifiedPollingSeconds = IdleUnifiedPollingSeconds,
@@ -501,6 +650,12 @@ public sealed class AppSettings
         IdleGpuMemoryUsagePollingSeconds = IdleGpuMemoryUsagePollingSeconds,
         IdleGpuMemoryTemperaturePollingSeconds = IdleGpuMemoryTemperaturePollingSeconds,
         IdleGpuFanPollingSeconds = IdleGpuFanPollingSeconds,
+        IdleMotherboardTemperaturePollingSeconds = IdleMotherboardTemperaturePollingSeconds,
+        IdleMemoryTemperaturePollingSeconds = IdleMemoryTemperaturePollingSeconds,
+        IdleCpuFanPollingSeconds = IdleCpuFanPollingSeconds,
+        IdleStorageTemperaturePollingSeconds = IdleStorageTemperaturePollingSeconds,
+        IdlePowerPollingSeconds = IdlePowerPollingSeconds,
+        IdleGpuHotSpotTemperaturePollingSeconds = IdleGpuHotSpotTemperaturePollingSeconds,
         WidgetAppearance = WidgetAppearance,
         WidgetFont = WidgetFont,
         WidgetTextWeight = WidgetTextWeight,

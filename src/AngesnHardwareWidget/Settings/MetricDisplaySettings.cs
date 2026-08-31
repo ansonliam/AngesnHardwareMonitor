@@ -12,6 +12,9 @@ public sealed class MetricDisplaySettings
 
     public bool Visible { get; set; } = true;
 
+    /// <summary>User-facing label shown on the widget. Empty uses the built-in label.</summary>
+    public string DisplayName { get; set; } = string.Empty;
+
     /// <summary>Whether this metric's history sparkline is shown. Presentation only.</summary>
     public bool ShowGraph { get; set; } = true;
 
@@ -19,6 +22,7 @@ public sealed class MetricDisplaySettings
     {
         MetricType = MetricType,
         Visible = Visible,
+        DisplayName = DisplayName,
         ShowGraph = ShowGraph,
     };
 }

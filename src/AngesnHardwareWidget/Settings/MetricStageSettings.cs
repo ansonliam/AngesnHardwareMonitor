@@ -58,6 +58,10 @@ public sealed class MetricStageSettings
 
         // VRAM junction runs hotter than the core; GDDR6X is specified to around 105 C.
         MetricTypes.GpuMemoryTemperature => FromRange(40, 100),
+        MetricTypes.MotherboardTemperature => FromRange(25, 85),
+        MetricTypes.MemoryTemperature => FromRange(25, 85),
+        MetricTypes.StorageTemperature => FromRange(25, 80),
+        MetricTypes.GpuHotSpotTemperature => FromRange(35, 110),
 
         // Utilisation genuinely spans its whole range, and idle should read as healthy.
         MetricTypes.CpuUsage => FromRange(0, 100),
@@ -69,6 +73,10 @@ public sealed class MetricStageSettings
 
         // RPM, not a percentage. 0 (zero-fan idle) through a typical ~3000 RPM maximum.
         MetricTypes.GpuFanRpm => FromRange(0, 3000),
+        MetricTypes.CpuFanRpm => FromRange(0, 3000),
+
+        // Combined CPU-package and GPU-package draw. This is component power, not wall power.
+        MetricTypes.Power => FromRange(0, 500),
 
         _ => FromRange(0, 100),
     };

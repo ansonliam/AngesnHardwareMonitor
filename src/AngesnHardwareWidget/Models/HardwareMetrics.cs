@@ -1,7 +1,7 @@
 namespace AngesnHardwareWidget.Models;
 
 /// <summary>
-/// The eight logical metrics the widget schedules independently. RAM is one logical metric even
+/// The logical metrics the widget schedules independently. RAM is one logical metric even
 /// though it yields three raw values (used GB, total GB, percent), because they all come from a
 /// single Memory hardware update.
 /// </summary>
@@ -17,11 +17,20 @@ public enum HardwareMetrics
     GpuMemoryUsage = 1 << 5,
     GpuMemoryTemperature = 1 << 6,
     GpuFan = 1 << 7,
+    MotherboardTemperature = 1 << 8,
+    MemoryTemperature = 1 << 9,
+    CpuFan = 1 << 10,
+    StorageTemperature = 1 << 11,
+    Power = 1 << 12,
+    GpuHotSpotTemperature = 1 << 13,
+    CpuPower = 1 << 14,
+    GpuPower = 1 << 15,
 
     Cpu = CpuTemperature | CpuUsage,
-    Memory = MemoryUsage,
-    Gpu = GpuTemperature | GpuComputeUsage | GpuMemoryUsage | GpuMemoryTemperature | GpuFan,
-    All = Cpu | Memory | Gpu,
+    Memory = MemoryUsage | MemoryTemperature,
+    Gpu = GpuTemperature | GpuComputeUsage | GpuMemoryUsage | GpuMemoryTemperature | GpuFan | GpuHotSpotTemperature,
+    Platform = MotherboardTemperature | CpuFan | StorageTemperature | Power,
+    All = Cpu | Memory | Gpu | Platform | CpuPower | GpuPower,
 }
 
 public static class HardwareMetricsExtensions
@@ -40,5 +49,13 @@ public static class HardwareMetricsExtensions
         HardwareMetrics.GpuMemoryUsage,
         HardwareMetrics.GpuMemoryTemperature,
         HardwareMetrics.GpuFan,
+        HardwareMetrics.MotherboardTemperature,
+        HardwareMetrics.MemoryTemperature,
+        HardwareMetrics.CpuFan,
+        HardwareMetrics.StorageTemperature,
+        HardwareMetrics.Power,
+        HardwareMetrics.GpuHotSpotTemperature,
+        HardwareMetrics.CpuPower,
+        HardwareMetrics.GpuPower,
     ];
 }

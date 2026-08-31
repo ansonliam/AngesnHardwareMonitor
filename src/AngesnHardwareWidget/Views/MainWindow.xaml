@@ -151,10 +151,18 @@
             no gear, so the card is only the readout. Settings is on the right-click menu and the
             tray icon.
         -->
-        <ItemsControl
-            Margin="10,8,10,8"
-            Focusable="False"
-            ItemsSource="{Binding Metrics}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <!-- Always retained: warnings must never make the bottom space appear/disappear. -->
+                <RowDefinition Height="Auto" MinHeight="16" />
+            </Grid.RowDefinitions>
+
+            <ItemsControl
+                Grid.Row="0"
+                Margin="10,8,10,2"
+                Focusable="False"
+                ItemsSource="{Binding Metrics}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <controls:MetricColumnsPanel ColumnSpacing="16" MinimumColumnWidth="{DynamicResource WidgetMinimumColumnWidth}" />
@@ -218,6 +226,21 @@
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            </ItemsControl>
+
+            <Border
+                Grid.Row="1"
+                MinHeight="16"
+                Margin="10,0,10,4">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontFamily="{DynamicResource WidgetFontFamily}"
+                    FontSize="10"
+                    FontWeight="SemiBold"
+                    Foreground="#FFFF7043"
+                    Text="{Binding AlertText}"
+                    TextWrapping="Wrap" />
+            </Border>
+        </Grid>
     </Border>
 </Window>

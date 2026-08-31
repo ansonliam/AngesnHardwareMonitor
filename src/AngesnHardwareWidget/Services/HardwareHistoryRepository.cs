@@ -350,6 +350,46 @@ public sealed class HardwareHistoryRepository : IDisposable
             Add(MetricTypes.GpuFanRpm, record.GpuFanRpm, record.GpuDeviceId);
         }
 
+        if (sampled.Includes(HardwareMetrics.MotherboardTemperature))
+        {
+            Add(MetricTypes.MotherboardTemperature, record.MotherboardTemperature, null);
+        }
+
+        if (sampled.Includes(HardwareMetrics.MemoryTemperature))
+        {
+            Add(MetricTypes.MemoryTemperature, record.MemoryTemperature, null);
+        }
+
+        if (sampled.Includes(HardwareMetrics.CpuFan))
+        {
+            Add(MetricTypes.CpuFanRpm, record.CpuFanRpm, record.CpuDeviceId);
+        }
+
+        if (sampled.Includes(HardwareMetrics.StorageTemperature))
+        {
+            Add(MetricTypes.StorageTemperature, record.StorageTemperature, null);
+        }
+
+        if (sampled.Includes(HardwareMetrics.Power))
+        {
+            Add(MetricTypes.Power, record.PowerWatts, null);
+        }
+
+        if (sampled.Includes(HardwareMetrics.CpuPower))
+        {
+            Add(MetricTypes.CpuPower, record.CpuPowerWatts, record.CpuDeviceId);
+        }
+
+        if (sampled.Includes(HardwareMetrics.GpuPower))
+        {
+            Add(MetricTypes.GpuPower, record.GpuPowerWatts, record.GpuDeviceId);
+        }
+
+        if (sampled.Includes(HardwareMetrics.GpuHotSpotTemperature))
+        {
+            Add(MetricTypes.GpuHotSpotTemperature, record.GpuHotSpotTemperature, record.GpuDeviceId);
+        }
+
         return readings;
     }
 

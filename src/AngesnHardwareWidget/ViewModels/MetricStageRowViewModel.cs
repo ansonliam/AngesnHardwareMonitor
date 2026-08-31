@@ -15,6 +15,7 @@ public sealed class MetricStageRowViewModel : ObservableObject
 
     private bool _isVisible;
     private bool _isGraphVisible;
+    private string _displayName;
     private string _stage1Maximum;
     private string _stage2Maximum;
     private string _stage3Maximum;
@@ -27,13 +28,15 @@ public sealed class MetricStageRowViewModel : ObservableObject
         string unit,
         MetricStageSettings stages,
         bool isVisible,
-        bool isGraphVisible)
+        bool isGraphVisible,
+        string displayName)
     {
         _metricType = metricType;
         Label = label;
         Unit = unit;
         _isVisible = isVisible;
         _isGraphVisible = isGraphVisible;
+        _displayName = displayName;
         Minimum = stages.Minimum;
         Maximum = stages.Maximum;
 
@@ -49,6 +52,19 @@ public sealed class MetricStageRowViewModel : ObservableObject
     public string MetricType => _metricType;
 
     public string Label { get; }
+
+    /// <summary>The editable label mapped directly to this metric's widget row.</summary>
+    public string DisplayName
+    {
+        get => _displayName;
+        set
+        {
+            if (SetProperty(ref _displayName, value))
+            {
+                Edited?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
 
     /// <summary>Whether this metric appears in the widget. Applies live, like the thresholds.</summary>
     public bool IsVisible

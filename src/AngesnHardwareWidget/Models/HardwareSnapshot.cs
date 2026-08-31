@@ -15,7 +15,15 @@ public sealed record HardwareSnapshot(
     double? GpuComputeUsagePercent,
     double? GpuMemoryUsagePercent,
     double? GpuMemoryTemperature,
-    double? GpuFanRpm)
+    double? GpuFanRpm,
+    double? MotherboardTemperature,
+    double? MemoryTemperature,
+    double? CpuFanRpm,
+    double? StorageTemperature,
+    double? PowerWatts,
+    double? GpuHotSpotTemperature,
+    double? CpuPowerWatts,
+    double? GpuPowerWatts)
 {
     /// <summary>Metrics that were actually sampled this cycle. A metric can be in this set and
     /// still hold a null value, which means "we asked and the sensor was unavailable" -- that is a
@@ -34,6 +42,9 @@ public sealed record HardwareSnapshot(
 
     public double? GpuMemoryTotalMb { get; init; }
 
+    /// <summary>Readings keyed by the underlying sensor identifier for per-drive and per-CPU-fan rows.</summary>
+    public IReadOnlyDictionary<string, double?> SensorValues { get; init; } = new Dictionary<string, double?>();
+
     public static HardwareSnapshot Empty { get; } =
-        new(null, null, null, null, null, null, null, null, null, null);
+        new(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 }

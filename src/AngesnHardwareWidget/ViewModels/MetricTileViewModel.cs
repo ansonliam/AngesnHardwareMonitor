@@ -20,6 +20,9 @@ public enum MetricFormat
     /// <summary>Rounded integer, no unit. 0 is a real value here.</summary>
     Rpm,
 
+    /// <summary>Rounded integer watts.</summary>
+    Watts,
+
     /// <summary>RAM, which switches between "36%" and "23.2/63.9 GB (36%)".</summary>
     Memory,
 }
@@ -34,6 +37,7 @@ public sealed class MetricTileViewModel : ObservableObject
     private const int MaximumHistoryPoints = 2048;
 
     private string _display = Unavailable;
+    private string _label;
     private Brush? _valueBrush;
     private int _stage;
     private double _graphMaximum;
@@ -43,14 +47,18 @@ public sealed class MetricTileViewModel : ObservableObject
     public MetricTileViewModel(HardwareMetrics metric, string label, MetricFormat format)
     {
         Metric = metric;
-        Label = label;
+        _label = label;
         Format = format;
         _graphMaximum = format == MetricFormat.Rpm ? 1000 : 100;
     }
 
     public HardwareMetrics Metric { get; }
 
-    public string Label { get; }
+    public string Label
+    {
+        get => _label;
+        set => SetProperty(ref _label, value);
+    }
 
     public MetricFormat Format { get; }
 
@@ -118,6 +126,8 @@ public sealed class MetricTileViewModel : ObservableObject
 
             // 0 RPM is valid (zero-fan idle mode) and must not read as a missing sensor.
             MetricFormat.Rpm => FormatNumber(gradedValue, "0", string.Empty),
+
+            MetricFormat.Watts => FormatNumber(gradedValue, "0", " W"),
 
             MetricFormat.Memory => FormatMemory(gradedValue, memoryUsedGb, memoryTotalGb, showMemoryUsedAndTotal),
             _ => Unavailable,

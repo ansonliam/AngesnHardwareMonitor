@@ -80,6 +80,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     // Pending section, committed by Save.
     private bool _useUnifiedPollingInterval;
+    private bool _consolidatePower;
     private bool _useIdlePolling;
     private PollingIntervalOption _idleAfter;
     private PollingIntervalOption _idleUnifiedInterval;
@@ -91,6 +92,12 @@ public sealed class SettingsViewModel : ObservableObject
     private PollingIntervalOption _idleGpuMemoryUsageInterval;
     private PollingIntervalOption _idleGpuMemoryTemperatureInterval;
     private PollingIntervalOption _idleGpuFanInterval;
+    private PollingIntervalOption _idleMotherboardTemperatureInterval;
+    private PollingIntervalOption _idleMemoryTemperatureInterval;
+    private PollingIntervalOption _idleCpuFanInterval;
+    private PollingIntervalOption _idleStorageTemperatureInterval;
+    private PollingIntervalOption _idlePowerInterval;
+    private PollingIntervalOption _idleGpuHotSpotTemperatureInterval;
     private PollingIntervalOption _unifiedInterval;
     private PollingIntervalOption _cpuTemperatureInterval;
     private PollingIntervalOption _cpuUsageInterval;
@@ -100,12 +107,18 @@ public sealed class SettingsViewModel : ObservableObject
     private PollingIntervalOption _gpuMemoryUsageInterval;
     private PollingIntervalOption _gpuMemoryTemperatureInterval;
     private PollingIntervalOption _gpuFanInterval;
+    private PollingIntervalOption _motherboardTemperatureInterval;
+    private PollingIntervalOption _memoryTemperatureInterval;
+    private PollingIntervalOption _cpuFanInterval;
+    private PollingIntervalOption _storageTemperatureInterval;
+    private PollingIntervalOption _powerInterval;
+    private PollingIntervalOption _gpuHotSpotTemperatureInterval;
 
     private string? _validationMessage;
     private string? _savedMessage;
     private bool _hasUnsavedMonitoringChanges;
 
-    public SettingsViewModel(SettingsService settings, Action closeWindow)
+    public SettingsViewModel(SettingsService settings, HardwareSensorCatalog sensorCatalog, Action closeWindow)
     {
         _settings = settings;
 
@@ -140,6 +153,7 @@ public sealed class SettingsViewModel : ObservableObject
                 .OrderBy(value => value)
                 .Select(value => new PollingIntervalOption(value)));
 
+
         _widgetAppearance = current.WidgetAppearance;
         _widgetFont = current.WidgetFont;
         _widgetTextWeight = current.WidgetTextWeight;
@@ -166,6 +180,7 @@ public sealed class SettingsViewModel : ObservableObject
         _startWithWindows = _startup.IsEnabled();
 
         _useUnifiedPollingInterval = current.UseUnifiedPollingInterval;
+        _consolidatePower = current.ConsolidatePower;
         _unifiedInterval = Option(current.UnifiedPollingSeconds);
         _cpuTemperatureInterval = Option(current.CpuTemperaturePollingSeconds);
         _cpuUsageInterval = Option(current.CpuUsagePollingSeconds);
@@ -175,6 +190,12 @@ public sealed class SettingsViewModel : ObservableObject
         _gpuMemoryUsageInterval = Option(current.GpuMemoryUsagePollingSeconds);
         _gpuMemoryTemperatureInterval = Option(current.GpuMemoryTemperaturePollingSeconds);
         _gpuFanInterval = Option(current.GpuFanPollingSeconds);
+        _motherboardTemperatureInterval = Option(current.MotherboardTemperaturePollingSeconds);
+        _memoryTemperatureInterval = Option(current.MemoryTemperaturePollingSeconds);
+        _cpuFanInterval = Option(current.CpuFanPollingSeconds);
+        _storageTemperatureInterval = Option(current.StorageTemperaturePollingSeconds);
+        _powerInterval = Option(current.PowerPollingSeconds);
+        _gpuHotSpotTemperatureInterval = Option(current.GpuHotSpotTemperaturePollingSeconds);
 
         _useIdlePolling = current.UseIdlePolling;
         _idleAfter = ResolveIdleAfter(current.IdleAfterSeconds);
@@ -187,6 +208,12 @@ public sealed class SettingsViewModel : ObservableObject
         _idleGpuMemoryUsageInterval = IdleOption(current.IdleGpuMemoryUsagePollingSeconds);
         _idleGpuMemoryTemperatureInterval = IdleOption(current.IdleGpuMemoryTemperaturePollingSeconds);
         _idleGpuFanInterval = IdleOption(current.IdleGpuFanPollingSeconds);
+        _idleMotherboardTemperatureInterval = IdleOption(current.IdleMotherboardTemperaturePollingSeconds);
+        _idleMemoryTemperatureInterval = IdleOption(current.IdleMemoryTemperaturePollingSeconds);
+        _idleCpuFanInterval = IdleOption(current.IdleCpuFanPollingSeconds);
+        _idleStorageTemperatureInterval = IdleOption(current.IdleStorageTemperaturePollingSeconds);
+        _idlePowerInterval = IdleOption(current.IdlePowerPollingSeconds);
+        _idleGpuHotSpotTemperatureInterval = IdleOption(current.IdleGpuHotSpotTemperaturePollingSeconds);
 
         // Rows are listed in the widget's own display order, so the editor and the widget always
         // agree about what "first" means.
@@ -200,19 +227,40 @@ public sealed class SettingsViewModel : ObservableObject
             [HardwareMetrics.GpuMemoryUsage] = ("GPU memory usage", "%"),
             [HardwareMetrics.GpuMemoryTemperature] = ("VRAM temperature", "°C"),
             [HardwareMetrics.GpuFan] = ("GPU fan", "RPM"),
+            [HardwareMetrics.MotherboardTemperature] = ("Motherboard temperature", "°C"),
+            [HardwareMetrics.MemoryTemperature] = ("RAM temperature", "°C"),
+            [HardwareMetrics.CpuFan] = ("CPU fan", "RPM"),
+            [HardwareMetrics.StorageTemperature] = ("Drive temperature", "°C"),
+            [HardwareMetrics.Power] = ("CPU + GPU power", "W"),
+            [HardwareMetrics.CpuPower] = ("CPU power", "W"),
+            [HardwareMetrics.GpuPower] = ("GPU power", "W"),
+            [HardwareMetrics.GpuHotSpotTemperature] = ("GPU hotspot temperature", "°C"),
         };
 
-        var byKey = HardwareMetricsExtensions.Individual.ToDictionary(MetricTypes.DisplayKeyOf, m => m);
-        var orderedMetrics = current.MetricDisplay
-            .Where(entry => byKey.ContainsKey(entry.MetricType))
-            .Select(entry => byKey[entry.MetricType])
-            .ToList();
+        var sensorLabels = sensorCatalog.DriveTemperatureSensors
+            .ToDictionary(
+                sensor => SensorMetricKeys.Drive(sensor.Id),
+                sensor => (sensor.Label, "°C"));
+        foreach (var sensor in sensorCatalog.CpuFanSensors)
+        {
+            sensorLabels[SensorMetricKeys.CpuFan(sensor.Id)] = (sensor.Label, "RPM");
+        }
 
+        var byKey = HardwareMetricsExtensions.Individual.ToDictionary(MetricTypes.DisplayKeyOf, m => m);
         StageRows = new ObservableCollection<MetricStageRowViewModel>(
-            orderedMetrics.Select(metric =>
+            current.MetricDisplay
+                .Where(entry => byKey.ContainsKey(entry.MetricType) || sensorLabels.ContainsKey(entry.MetricType))
+                .Where(entry => entry.MetricType is not MetricTypes.CpuFanRpm and not MetricTypes.StorageTemperature)
+                .Select(entry =>
             {
-                var (label, unit) = labels[metric];
-                return Row(current, metric, label, unit);
+                if (byKey.TryGetValue(entry.MetricType, out var metric))
+                {
+                    var (staticLabel, staticUnit) = labels[metric];
+                    return Row(current, metric, staticLabel, staticUnit);
+                }
+
+                var (sensorLabel, sensorUnit) = sensorLabels[entry.MetricType];
+                return SensorRow(current, entry.MetricType, sensorLabel, sensorUnit);
             }));
 
         foreach (var row in StageRows)
@@ -462,6 +510,12 @@ public sealed class SettingsViewModel : ObservableObject
         }
     }
 
+    public bool ConsolidatePower
+    {
+        get => _consolidatePower;
+        set => SetPending(ref _consolidatePower, value);
+    }
+
     /// <summary>The individual interval controls are shown only in individual mode.</summary>
     public bool IndividualIntervalsEnabled => !UseUnifiedPollingInterval;
 
@@ -543,6 +597,42 @@ public sealed class SettingsViewModel : ObservableObject
         set => SetPending(ref _idleGpuFanInterval, value);
     }
 
+    public PollingIntervalOption IdleMotherboardTemperatureInterval
+    {
+        get => _idleMotherboardTemperatureInterval;
+        set => SetPending(ref _idleMotherboardTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption IdleMemoryTemperatureInterval
+    {
+        get => _idleMemoryTemperatureInterval;
+        set => SetPending(ref _idleMemoryTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption IdleCpuFanInterval
+    {
+        get => _idleCpuFanInterval;
+        set => SetPending(ref _idleCpuFanInterval, value);
+    }
+
+    public PollingIntervalOption IdleStorageTemperatureInterval
+    {
+        get => _idleStorageTemperatureInterval;
+        set => SetPending(ref _idleStorageTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption IdlePowerInterval
+    {
+        get => _idlePowerInterval;
+        set => SetPending(ref _idlePowerInterval, value);
+    }
+
+    public PollingIntervalOption IdleGpuHotSpotTemperatureInterval
+    {
+        get => _idleGpuHotSpotTemperatureInterval;
+        set => SetPending(ref _idleGpuHotSpotTemperatureInterval, value);
+    }
+
     public PollingIntervalOption UnifiedInterval
     {
         get => _unifiedInterval;
@@ -597,6 +687,42 @@ public sealed class SettingsViewModel : ObservableObject
         set => SetPending(ref _gpuFanInterval, value);
     }
 
+    public PollingIntervalOption MotherboardTemperatureInterval
+    {
+        get => _motherboardTemperatureInterval;
+        set => SetPending(ref _motherboardTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption MemoryTemperatureInterval
+    {
+        get => _memoryTemperatureInterval;
+        set => SetPending(ref _memoryTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption CpuFanInterval
+    {
+        get => _cpuFanInterval;
+        set => SetPending(ref _cpuFanInterval, value);
+    }
+
+    public PollingIntervalOption StorageTemperatureInterval
+    {
+        get => _storageTemperatureInterval;
+        set => SetPending(ref _storageTemperatureInterval, value);
+    }
+
+    public PollingIntervalOption PowerInterval
+    {
+        get => _powerInterval;
+        set => SetPending(ref _powerInterval, value);
+    }
+
+    public PollingIntervalOption GpuHotSpotTemperatureInterval
+    {
+        get => _gpuHotSpotTemperatureInterval;
+        set => SetPending(ref _gpuHotSpotTemperatureInterval, value);
+    }
+
     // -------------------------------------------------------------- behaviour
 
     /// <summary>
@@ -628,6 +754,7 @@ public sealed class SettingsViewModel : ObservableObject
             {
                 MetricType = row.MetricType,
                 Visible = row.IsVisible,
+                DisplayName = row.DisplayName.Trim(),
                 ShowGraph = row.IsGraphVisible,
             })
             .ToList();
@@ -674,6 +801,7 @@ public sealed class SettingsViewModel : ObservableObject
 
         var updated = _settings.Current;
         updated.UseUnifiedPollingInterval = UseUnifiedPollingInterval;
+        updated.ConsolidatePower = ConsolidatePower;
         updated.UnifiedPollingSeconds = UnifiedInterval.Seconds;
         updated.CpuTemperaturePollingSeconds = CpuTemperatureInterval.Seconds;
         updated.CpuUsagePollingSeconds = CpuUsageInterval.Seconds;
@@ -683,6 +811,12 @@ public sealed class SettingsViewModel : ObservableObject
         updated.GpuMemoryUsagePollingSeconds = GpuMemoryUsageInterval.Seconds;
         updated.GpuMemoryTemperaturePollingSeconds = GpuMemoryTemperatureInterval.Seconds;
         updated.GpuFanPollingSeconds = GpuFanInterval.Seconds;
+        updated.MotherboardTemperaturePollingSeconds = MotherboardTemperatureInterval.Seconds;
+        updated.MemoryTemperaturePollingSeconds = MemoryTemperatureInterval.Seconds;
+        updated.CpuFanPollingSeconds = CpuFanInterval.Seconds;
+        updated.StorageTemperaturePollingSeconds = StorageTemperatureInterval.Seconds;
+        updated.PowerPollingSeconds = PowerInterval.Seconds;
+        updated.GpuHotSpotTemperaturePollingSeconds = GpuHotSpotTemperatureInterval.Seconds;
         updated.UseIdlePolling = UseIdlePolling;
         updated.IdleAfterSeconds = IdleAfter.Seconds;
         updated.IdleUnifiedPollingSeconds = IdleUnifiedInterval.Seconds;
@@ -694,6 +828,12 @@ public sealed class SettingsViewModel : ObservableObject
         updated.IdleGpuMemoryUsagePollingSeconds = IdleGpuMemoryUsageInterval.Seconds;
         updated.IdleGpuMemoryTemperaturePollingSeconds = IdleGpuMemoryTemperatureInterval.Seconds;
         updated.IdleGpuFanPollingSeconds = IdleGpuFanInterval.Seconds;
+        updated.IdleMotherboardTemperaturePollingSeconds = IdleMotherboardTemperatureInterval.Seconds;
+        updated.IdleMemoryTemperaturePollingSeconds = IdleMemoryTemperatureInterval.Seconds;
+        updated.IdleCpuFanPollingSeconds = IdleCpuFanInterval.Seconds;
+        updated.IdleStorageTemperaturePollingSeconds = IdleStorageTemperatureInterval.Seconds;
+        updated.IdlePowerPollingSeconds = IdlePowerInterval.Seconds;
+        updated.IdleGpuHotSpotTemperaturePollingSeconds = IdleGpuHotSpotTemperatureInterval.Seconds;
 
         _settings.Save(updated);
 
@@ -748,7 +888,13 @@ public sealed class SettingsViewModel : ObservableObject
             && AppSettings.IsValidInterval(GpuComputeUsageInterval.Seconds)
             && AppSettings.IsValidInterval(GpuMemoryUsageInterval.Seconds)
             && AppSettings.IsValidInterval(GpuMemoryTemperatureInterval.Seconds)
-            && AppSettings.IsValidInterval(GpuFanInterval.Seconds);
+            && AppSettings.IsValidInterval(GpuFanInterval.Seconds)
+            && AppSettings.IsValidInterval(MotherboardTemperatureInterval.Seconds)
+            && AppSettings.IsValidInterval(MemoryTemperatureInterval.Seconds)
+            && AppSettings.IsValidInterval(CpuFanInterval.Seconds)
+            && AppSettings.IsValidInterval(StorageTemperatureInterval.Seconds)
+            && AppSettings.IsValidInterval(PowerInterval.Seconds)
+            && AppSettings.IsValidInterval(GpuHotSpotTemperatureInterval.Seconds);
     }
 
     private bool AreIdleIntervalsValid()
@@ -775,7 +921,13 @@ public sealed class SettingsViewModel : ObservableObject
             && AppSettings.IsValidIdleInterval(IdleGpuComputeUsageInterval.Seconds)
             && AppSettings.IsValidIdleInterval(IdleGpuMemoryUsageInterval.Seconds)
             && AppSettings.IsValidIdleInterval(IdleGpuMemoryTemperatureInterval.Seconds)
-            && AppSettings.IsValidIdleInterval(IdleGpuFanInterval.Seconds);
+            && AppSettings.IsValidIdleInterval(IdleGpuFanInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdleMotherboardTemperatureInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdleMemoryTemperatureInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdleCpuFanInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdleStorageTemperatureInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdlePowerInterval.Seconds)
+            && AppSettings.IsValidIdleInterval(IdleGpuHotSpotTemperatureInterval.Seconds);
     }
 
     private static MetricStageRowViewModel Row(
@@ -789,7 +941,24 @@ public sealed class SettingsViewModel : ObservableObject
             unit,
             settings.ResolveStages(metric),
             settings.IsVisible(metric),
-            settings.IsGraphVisible(metric));
+            settings.IsGraphVisible(metric),
+            settings.ResolveDisplayName(metric));
+
+    private static MetricStageRowViewModel SensorRow(
+        AppSettings settings,
+        string metricType,
+        string label,
+        string unit) =>
+        new(
+            metricType,
+            label,
+            unit,
+            settings.ResolveStages(
+                metricType,
+                SensorMetricKeys.IsDrive(metricType) ? MetricTypes.StorageTemperature : MetricTypes.CpuFanRpm),
+            settings.MetricDisplay.FirstOrDefault(entry => entry.MetricType == metricType)?.Visible ?? true,
+            settings.IsGraphVisible(metricType),
+            settings.ResolveDisplayName(metricType, label));
 
     private void SetLive<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
@@ -885,4 +1054,5 @@ public sealed class SettingsViewModel : ObservableObject
     private PollingIntervalOption ResolveIdleAfter(int seconds) =>
         IdleAfterOptions.FirstOrDefault(option => option.Seconds == seconds)
         ?? IdleAfterOptions.First(option => option.Seconds == AppSettings.DefaultIdleAfterSeconds);
+
 }
