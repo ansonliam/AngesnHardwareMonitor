@@ -47,7 +47,8 @@ public partial class MainWindow : Window
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
     private const uint SwpNoOwnerZOrder = 0x0200;
-    private static readonly IntPtr HwndTop = IntPtr.Zero;
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private static readonly IntPtr HwndNoTopmost = new(-2);
 
     private readonly SettingsService _settings;
     private readonly DispatcherTimer _placementSaveTimer;
@@ -240,8 +241,13 @@ public partial class MainWindow : Window
     /// <summary>
     /// WS_EX_NOACTIVATE (see <see cref="ApplyNonActivatingToolWindowStyle"/>) keeps the widget out of
     /// Alt+Tab, but it also means Windows never promotes the window's z-order on click -- that
-    /// promotion normally rides along with activation, which this window is barred from. Bring it to
-    /// the top of the (non-topmost) stack explicitly, still without activating or stealing focus.
+    /// promotion normally rides along with activation, which this window is barred from.
+    ///
+    /// A plain SetWindowPos(HWND_TOP) does not reliably work around this: Windows' foreground-lock
+    /// heuristic can silently ignore a z-order-only request from a window that isn't the foreground
+    /// application. Briefly flashing the window into the topmost band and immediately back out is
+    /// not subject to that restriction, so it reliably lands the widget above whatever it was
+    /// clicked through, still without activating or stealing focus.
     /// </summary>
     private void RaiseZOrderWithoutActivating()
     {
@@ -251,14 +257,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        SetWindowPos(
-            handle,
-            HwndTop,
-            0,
-            0,
-            0,
-            0,
-            SwpNoMove | SwpNoSize | SwpNoActivate);
+        SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+        SetWindowPos(handle, HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
     }
 
     // ----------------------------------------------------------- context menu
