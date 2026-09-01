@@ -29,7 +29,8 @@ public sealed class MetricStageRowViewModel : ObservableObject
         MetricStageSettings stages,
         bool isVisible,
         bool isGraphVisible,
-        string displayName)
+        string displayName,
+        string defaultDisplayName)
     {
         _metricType = metricType;
         Label = label;
@@ -37,6 +38,7 @@ public sealed class MetricStageRowViewModel : ObservableObject
         _isVisible = isVisible;
         _isGraphVisible = isGraphVisible;
         _displayName = displayName;
+        DefaultDisplayName = defaultDisplayName;
         Minimum = stages.Minimum;
         Maximum = stages.Maximum;
 
@@ -52,6 +54,12 @@ public sealed class MetricStageRowViewModel : ObservableObject
     public string MetricType => _metricType;
 
     public string Label { get; }
+
+    /// <summary>The label this row falls back to when no name has been typed. Held so that a name
+    /// left untouched can be persisted as "no name" rather than stamped in as an explicit one,
+    /// which would freeze a drive to the label it happened to have the first time it was seen.
+    /// </summary>
+    public string DefaultDisplayName { get; }
 
     /// <summary>The editable label mapped directly to this metric's widget row.</summary>
     public string DisplayName

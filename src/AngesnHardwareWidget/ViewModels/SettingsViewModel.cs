@@ -749,14 +749,29 @@ public sealed class SettingsViewModel : ObservableObject
         ValidationMessage = null;
 
         var updated = _settings.Current;
-        updated.MetricDisplay = StageRows
+
+        // Merged into the persisted list, never assigned over it. The editor only holds rows whose
+        // sensor the catalog knew about when the window opened, so replacing the list outright
+        // deletes the settings of any drive or fan that was not enumerated at that moment -- along
+        // with the two retired aggregate rows -- and they come back as new default rows on the next
+        // launch. Edited rows are taken in editor order; everything else keeps its entry.
+        var edited = StageRows
             .Select(row => new MetricDisplaySettings
             {
                 MetricType = row.MetricType,
                 Visible = row.IsVisible,
-                DisplayName = row.DisplayName.Trim(),
+                // An untouched name is stored as empty so the row keeps tracking its default label
+                // instead of freezing the label it was shown with.
+                DisplayName = string.Equals(row.DisplayName.Trim(), row.DefaultDisplayName, StringComparison.Ordinal)
+                    ? string.Empty
+                    : row.DisplayName.Trim(),
                 ShowGraph = row.IsGraphVisible,
             })
+            .ToList();
+
+        var editedKeys = edited.Select(entry => entry.MetricType).ToHashSet(StringComparer.Ordinal);
+        updated.MetricDisplay = edited
+            .Concat(updated.MetricDisplay.Where(entry => !editedKeys.Contains(entry.MetricType)))
             .ToList();
         updated.WidgetAppearance = AppSettings.NormalizeAppearance(WidgetAppearance);
         updated.WidgetFont = AppSettings.NormalizeFont(WidgetFont);
@@ -770,7 +785,12 @@ public sealed class SettingsViewModel : ObservableObject
         updated.WidgetMinimumColumnWidthWithRam = _widgetMinimumColumnWidthWithRam;
         updated.WidgetGraphHeightMinimum = _widgetGraphHeightMinimum;
         updated.WidgetGraphHeightMaximum = _widgetGraphHeightMaximum;
-        updated.MetricStages = stages;
+        // Merged for the same reason as MetricDisplay: thresholds belonging to a sensor the editor
+        // could not show must survive an edit made to some other row.
+        foreach (var (key, value) in stages)
+        {
+            updated.MetricStages[key] = value;
+        }
 
         _settings.Save(updated);
     }
@@ -942,7 +962,8 @@ public sealed class SettingsViewModel : ObservableObject
             settings.ResolveStages(metric),
             settings.IsVisible(metric),
             settings.IsGraphVisible(metric),
-            settings.ResolveDisplayName(metric));
+            settings.ResolveDisplayName(metric),
+            MetricTypes.DefaultDisplayNameOf(metric));
 
     private static MetricStageRowViewModel SensorRow(
         AppSettings settings,
@@ -958,7 +979,8 @@ public sealed class SettingsViewModel : ObservableObject
                 SensorMetricKeys.IsDrive(metricType) ? MetricTypes.StorageTemperature : MetricTypes.CpuFanRpm),
             settings.MetricDisplay.FirstOrDefault(entry => entry.MetricType == metricType)?.Visible ?? true,
             settings.IsGraphVisible(metricType),
-            settings.ResolveDisplayName(metricType, label));
+            settings.ResolveDisplayName(metricType, label),
+            label);
 
     private void SetLive<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

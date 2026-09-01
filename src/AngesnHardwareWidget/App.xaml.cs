@@ -230,8 +230,8 @@ public partial class App : Application, IApplicationController
             }
         }
 
-        changed |= AddSensorRows(updated, catalog.DriveTemperatureSensors, SensorMetricKeys.Drive);
-        changed |= AddSensorRows(updated, catalog.CpuFanSensors, SensorMetricKeys.CpuFan);
+        changed |= SyncSensorRows(updated, catalog.DriveTemperatureSensors, SensorMetricKeys.Drive);
+        changed |= SyncSensorRows(updated, catalog.CpuFanSensors, SensorMetricKeys.CpuFan);
 
         if (changed)
         {
@@ -239,7 +239,7 @@ public partial class App : Application, IApplicationController
         }
     }
 
-    private static bool AddSensorRows(
+    private static bool SyncSensorRows(
         AppSettings settings,
         IEnumerable<HardwareSensorOption> sensors,
         Func<string, string> keyOf)
@@ -248,15 +248,27 @@ public partial class App : Application, IApplicationController
         foreach (var sensor in sensors)
         {
             var key = keyOf(sensor.Id);
-            if (settings.MetricDisplay.Any(entry => entry.MetricType == key))
+            var existing = settings.MetricDisplay.FirstOrDefault(entry => entry.MetricType == key);
+            if (existing is not null)
             {
+                // An empty display name means "use whatever the catalog calls this sensor now", so
+                // a name the app generated is cleared rather than left frozen: a drive first seen
+                // before Windows would give up its volume letter must not be stuck on its model
+                // number forever. A name the user typed is never touched.
+                if (existing.DisplayName.Length > 0 && sensor.IsGeneratedLabel(existing.DisplayName))
+                {
+                    existing.DisplayName = string.Empty;
+                    changed = true;
+                }
+
                 continue;
             }
 
             settings.MetricDisplay.Add(new Settings.MetricDisplaySettings
             {
                 MetricType = key,
-                DisplayName = sensor.Label,
+                // Deliberately empty: the label is resolved from the live catalog at render time.
+                DisplayName = string.Empty,
                 Visible = true,
                 ShowGraph = true,
             });

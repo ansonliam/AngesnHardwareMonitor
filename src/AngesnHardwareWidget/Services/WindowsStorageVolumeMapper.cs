@@ -20,7 +20,11 @@ internal static class WindowsStorageVolumeMapper
 
         try
         {
-            using var disks = new ManagementObjectSearcher("SELECT Model FROM Win32_DiskDrive").Get();
+            // DeviceID is the key of Win32_DiskDrive and must be in the projection even though only
+            // Model is read: a projected object without its key has no resolvable __RELPATH, so
+            // GetRelated below throws "Operation is not valid due to the current state of the
+            // object" for every disk and the whole mapping silently degrades to hardware names.
+            using var disks = new ManagementObjectSearcher("SELECT DeviceID, Model FROM Win32_DiskDrive").Get();
             foreach (ManagementObject disk in disks)
             {
                 var model = disk["Model"]?.ToString()?.Trim();
@@ -29,18 +33,31 @@ internal static class WindowsStorageVolumeMapper
                     continue;
                 }
 
-                var volumes = disk
-                    .GetRelated("Win32_DiskPartition")
-                    .Cast<ManagementObject>()
-                    .SelectMany(partition => partition
-                        .GetRelated("Win32_LogicalDisk")
-                        .Cast<ManagementObject>())
-                    .Select(volume => volume["DeviceID"]?.ToString()?.Trim())
-                    .Where(volume => !string.IsNullOrWhiteSpace(volume))
-                    .Select(volume => volume + "\\")
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(volume => volume, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                // Per disk rather than around the loop: one drive WMI cannot walk must cost that
+                // drive its label, not every drive enumerated after it.
+                List<string> volumes;
+                try
+                {
+                    volumes = disk
+                        .GetRelated("Win32_DiskPartition")
+                        .Cast<ManagementObject>()
+                        .SelectMany(partition => partition
+                            .GetRelated("Win32_LogicalDisk")
+                            .Cast<ManagementObject>())
+                        .Select(volume => volume["DeviceID"]?.ToString()?.Trim())
+                        .Where(volume => !string.IsNullOrWhiteSpace(volume))
+                        .Select(volume => volume + "\\")
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(volume => volume, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                catch (Exception exception)
+                {
+                    AppLog.Warn(
+                        $"Could not map '{model}' to a volume letter: " +
+                        $"{exception.GetType().Name}: {exception.Message}");
+                    continue;
+                }
 
                 if (volumes.Count > 0)
                 {

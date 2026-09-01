@@ -809,7 +809,10 @@ public sealed class LibreHardwareMonitorService : IHardwareMonitorService
             }
         }
 
-        return new HardwareSensorOption(sensor.Identifier.ToString(), $"{source} — {sensor.Name}");
+        return new HardwareSensorOption(
+            sensor.Identifier.ToString(),
+            $"{source} — {sensor.Name}",
+            $"{sensor.Hardware.Name} — {sensor.Name}");
     }
 
     private static bool ContainsAny(string value, params string[] fragments) =>
