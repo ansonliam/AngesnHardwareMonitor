@@ -110,6 +110,7 @@ public partial class App : Application, IApplicationController
         // running on a background thread at this point, so its allocations are not garbage yet and
         // collecting now would just be paid for twice.
         _scheduler.SnapshotAvailable += OnFirstSnapshotAvailable;
+        MemoryReclaimer.StartPeriodicReclaim(Dispatcher);
 
         _scheduler.Start();
     }
