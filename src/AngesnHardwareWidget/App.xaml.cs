@@ -253,6 +253,11 @@ public partial class App : Application, IApplicationController
         {
             MainWindow = null;
         }
+
+        if (!IsExiting)
+        {
+            MemoryReclaimer.ReclaimAfterWindowClose(Dispatcher);
+        }
     }
 
     private void SetWidgetVisibility(bool isVisible)
