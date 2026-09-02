@@ -105,7 +105,23 @@ public partial class App : Application, IApplicationController
         // repoint it. Cheap, idempotent, and it stops "start with Windows" silently rotting.
         new WindowsStartupService().EnsurePathCurrent();
 
+        // Subscribed before the scheduler starts so the very first snapshot is caught. Waiting for
+        // a snapshot rather than reclaiming here is deliberate: the first sampling cycle is still
+        // running on a background thread at this point, so its allocations are not garbage yet and
+        // collecting now would just be paid for twice.
+        _scheduler.SnapshotAvailable += OnFirstSnapshotAvailable;
+
         _scheduler.Start();
+    }
+
+    private void OnFirstSnapshotAvailable(object? sender, HardwareSnapshot snapshot)
+    {
+        if (sender is HardwareMonitorScheduler scheduler)
+        {
+            scheduler.SnapshotAvailable -= OnFirstSnapshotAvailable;
+        }
+
+        MemoryReclaimer.ReclaimAfterStartup(Dispatcher);
     }
 
     protected override void OnExit(ExitEventArgs eventArgs)

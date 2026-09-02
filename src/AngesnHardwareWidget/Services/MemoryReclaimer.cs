@@ -12,6 +12,28 @@ namespace AngesnHardwareWidget.Services;
 /// </summary>
 internal static class MemoryReclaimer
 {
+    private static int _startupReclaimed;
+
+    /// <summary>
+    /// Reclaims the startup peak once the first snapshot has landed. Building the widget and
+    /// standing up the sensor catalog both allocate hard, and at startup they overlap with the
+    /// first hardware sample, so the heap is grown to cover every burst at once. The app then goes
+    /// idle - it barely allocates, so no collection is ever triggered, the dead segments are never
+    /// compacted, and Windows has no reason to trim the pages. Closing the widget already hands
+    /// that peak back; this does the same without making the user close anything.
+    /// </summary>
+    public static void ReclaimAfterStartup(Dispatcher dispatcher)
+    {
+        // SnapshotAvailable is raised on a background thread after every sampling cycle. Only the
+        // first one gets to schedule the pass.
+        if (Interlocked.Exchange(ref _startupReclaimed, 1) != 0)
+        {
+            return;
+        }
+
+        dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, Reclaim);
+    }
+
     /// <summary>
     /// Reclaims once the dispatcher queue has drained. WPF tears a window down across several
     /// dispatcher passes (visual tree release, HWND destruction, its own deferred cleanup), so
