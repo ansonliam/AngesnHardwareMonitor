@@ -34,6 +34,13 @@ public partial class MainWindow : Window
     /// <summary>Width of the invisible band along each edge that grabs a resize.</summary>
     private const double ResizeBorder = 7d;
 
+    /// <summary>
+    /// How much of the widget has to stay on the monitor for a saved position to count as
+    /// deliberate rather than lost. Roughly a grab-sized strip: enough that the user can still see
+    /// and drag the thing.
+    /// </summary>
+    private const double MinVisibleExtent = 80d;
+
     // Window style bits, used to opt the widget out of Aero Snap.
     private const int GwlStyle = -16;
     private const int GwlExStyle = -20;
@@ -616,6 +623,19 @@ public partial class MainWindow : Window
             width = Math.Max(MinWidth, bottomRight.X - topLeft.X);
             Width = width;
             changed = true;
+        }
+
+        // Parking the widget so an edge of it runs off the screen -- a few pixels past the bottom,
+        // or tucked behind the taskbar -- is a deliberate and perfectly ordinary thing to do with
+        // something this small. Dragging it there does not correct it, so neither should reopening
+        // it: a placement that still shows this much of the widget is the user's, not a mistake to
+        // undo. Only one that has left almost nothing on screen -- the display it was on
+        // disconnected, a resolution change -- is worth moving, and moving that one fully back on
+        // screen is the whole point.
+        if (Math.Min(Left + width, bottomRight.X) - Math.Max(Left, topLeft.X) >= MinVisibleExtent &&
+            Math.Min(Top + height, bottomRight.Y) - Math.Max(Top, topLeft.Y) >= MinVisibleExtent)
+        {
+            return changed;
         }
 
         var left = Math.Clamp(Left, topLeft.X, Math.Max(topLeft.X, bottomRight.X - width));
