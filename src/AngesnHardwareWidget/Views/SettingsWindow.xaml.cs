@@ -18,10 +18,13 @@ public partial class SettingsWindow : Window
 {
     private const string RowDataFormat = "AngesnHardwareWidget.MetricStageRow";
 
-    public SettingsWindow(SettingsService settings, HardwareSensorCatalog sensorCatalog)
+    public SettingsWindow(
+        SettingsService settings,
+        HardwareSensorCatalog sensorCatalog,
+        IApplicationController applicationController)
     {
         InitializeComponent();
-        DataContext = new SettingsViewModel(settings, sensorCatalog, Close);
+        DataContext = new SettingsViewModel(settings, sensorCatalog, applicationController, Close);
     }
 
     private SettingsViewModel? ViewModel => DataContext as SettingsViewModel;

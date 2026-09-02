@@ -51,11 +51,15 @@ public partial class MainWindow : Window
     private static readonly IntPtr HwndNoTopmost = new(-2);
 
     private readonly SettingsService _settings;
+    private readonly IApplicationController? _applicationController;
     private readonly DispatcherTimer _placementSaveTimer;
+    private readonly bool _designMode;
 
     private HwndSource? _windowSource;
     private bool _restoringPlacement;
     private bool _locked;
+    private bool _closingForHide;
+    private bool _isClosed;
 
     /// <summary>Used only by the XAML Designer. The unique nonexistent settings path prevents the
     /// designer from reading or writing the user's real settings.</summary>
@@ -64,27 +68,30 @@ public partial class MainWindow : Window
             new SettingsService(Path.Combine(
                 Path.GetTempPath(),
                 $"AngesnHardwareWidget-designer-{Guid.NewGuid():N}.json")),
+            applicationController: null,
             designMode: true)
     {
     }
 
-    public MainWindow(SettingsService settings) : this(settings, designMode: false)
+    public MainWindow(SettingsService settings, IApplicationController applicationController)
+        : this(settings, applicationController, designMode: false)
     {
     }
 
-    private MainWindow(SettingsService settings, bool designMode)
+    private MainWindow(
+        SettingsService settings,
+        IApplicationController? applicationController,
+        bool designMode)
     {
         _settings = settings;
+        _applicationController = applicationController;
+        _designMode = designMode;
         InitializeComponent();
 
         // Dragging and resizing fire a stream of events; save once things settle rather than
         // rewriting settings.json on every pixel.
         _placementSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
-        _placementSaveTimer.Tick += (_, _) =>
-        {
-            _placementSaveTimer.Stop();
-            SavePlacement();
-        };
+        _placementSaveTimer.Tick += OnPlacementSaveTimerTick;
 
         if (designMode)
         {
@@ -98,15 +105,56 @@ public partial class MainWindow : Window
         _settings.SettingsChanged += OnSettingsChanged;
 
         SourceInitialized += OnSourceInitialized;
-        LocationChanged += (_, _) => QueuePlacementSave();
-        SizeChanged += (_, _) => QueuePlacementSave();
+        LocationChanged += OnWindowPlacementChanged;
+        SizeChanged += OnWindowPlacementChanged;
         MouseLeftButtonDown += OnMouseLeftButtonDown;
-        Closing += (_, _) =>
+    }
+
+    public void CloseForHide()
+    {
+        _closingForHide = true;
+        Close();
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs eventArgs)
+    {
+        if (!_designMode)
         {
             _placementSaveTimer.Stop();
             SavePlacement();
-        };
+
+            if (!_closingForHide && Application.Current is App { IsExiting: false })
+            {
+                eventArgs.Cancel = true;
+                _applicationController?.ExitApplication();
+            }
+        }
+
+        base.OnClosing(eventArgs);
     }
+
+    protected override void OnClosed(EventArgs eventArgs)
+    {
+        _isClosed = true;
+        _placementSaveTimer.Stop();
+        _placementSaveTimer.Tick -= OnPlacementSaveTimerTick;
+        _settings.SettingsChanged -= OnSettingsChanged;
+        SourceInitialized -= OnSourceInitialized;
+        LocationChanged -= OnWindowPlacementChanged;
+        SizeChanged -= OnWindowPlacementChanged;
+        MouseLeftButtonDown -= OnMouseLeftButtonDown;
+        _windowSource?.RemoveHook(WindowMessageHook);
+        _windowSource = null;
+        base.OnClosed(eventArgs);
+    }
+
+    private void OnPlacementSaveTimerTick(object? sender, EventArgs eventArgs)
+    {
+        _placementSaveTimer.Stop();
+        SavePlacement();
+    }
+
+    private void OnWindowPlacementChanged(object? sender, EventArgs eventArgs) => QueuePlacementSave();
 
     // ------------------------------------------------------------- edge resize
 
@@ -372,7 +420,7 @@ public partial class MainWindow : Window
     private void OnLockClick(object sender, RoutedEventArgs eventArgs) =>
         Mutate(settings => settings.WidgetLocked = !settings.WidgetLocked);
 
-    private void OnHideClick(object sender, RoutedEventArgs eventArgs) => Hide();
+    private void OnHideClick(object sender, RoutedEventArgs eventArgs) => _applicationController?.HideWidget();
 
     /// <summary>Menu tags are invariant-culture decimals such as "0.85".</summary>
     private static bool TryGetTag(MenuItem item, out double value) =>
@@ -392,7 +440,13 @@ public partial class MainWindow : Window
     // ------------------------------------------------------------- appearance
 
     private void OnSettingsChanged(object? sender, AppSettings updated) =>
-        Dispatcher.BeginInvoke(() => ApplyAppearance(updated));
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_isClosed)
+            {
+                ApplyAppearance(updated);
+            }
+        });
 
     /// <summary>
     /// Retro versus Default, mirroring the AI Usage Monitor: Retro means an embedded pixel font,
@@ -589,7 +643,7 @@ public partial class MainWindow : Window
 
     private void QueuePlacementSave()
     {
-        if (_restoringPlacement)
+        if (_restoringPlacement || _isClosed)
         {
             return;
         }

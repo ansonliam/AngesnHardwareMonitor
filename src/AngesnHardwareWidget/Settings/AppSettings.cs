@@ -206,6 +206,12 @@ public sealed class AppSettings
     /// <summary>Widget opacity, 0.6-1.0, chosen from the widget's right-click menu.</summary>
     public double WidgetOpacity { get; set; } = 1.0;
 
+    /// <summary>
+    /// Whether the main widget is open. Kept with the rest of the widget state so the monitoring
+    /// runtime can start without constructing a Window when the user previously hid it.
+    /// </summary>
+    public bool ShowWidget { get; set; } = true;
+
     /// <summary>Text size multiplier, 0.85-1.5, chosen from the widget's right-click menu.</summary>
     public double WidgetTextScale { get; set; } = 1.0;
 
@@ -660,6 +666,7 @@ public sealed class AppSettings
         WidgetFont = WidgetFont,
         WidgetTextWeight = WidgetTextWeight,
         WidgetOpacity = WidgetOpacity,
+        ShowWidget = ShowWidget,
         WidgetTextScale = WidgetTextScale,
         WidgetAlwaysOnTop = WidgetAlwaysOnTop,
         WidgetLocked = WidgetLocked,

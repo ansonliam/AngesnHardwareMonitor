@@ -53,6 +53,7 @@ public sealed class SettingsViewModel : ObservableObject
     private static readonly int[] OfferedIdleAfterSeconds = [60, 120, 300, 600, 900, 1800, 3600];
 
     private readonly SettingsService _settings;
+    private readonly IApplicationController _applicationController;
     private readonly WindowsStartupService _startup = new();
 
     // Live section.
@@ -76,6 +77,7 @@ public sealed class SettingsViewModel : ObservableObject
     private double _widgetMinimumColumnWidthWithRam;
     private string _widgetMinimumColumnWidthText;
     private string _widgetMinimumColumnWidthWithRamText;
+    private bool _showWidget;
     private bool _startWithWindows;
 
     // Pending section, committed by Save.
@@ -118,9 +120,14 @@ public sealed class SettingsViewModel : ObservableObject
     private string? _savedMessage;
     private bool _hasUnsavedMonitoringChanges;
 
-    public SettingsViewModel(SettingsService settings, HardwareSensorCatalog sensorCatalog, Action closeWindow)
+    public SettingsViewModel(
+        SettingsService settings,
+        HardwareSensorCatalog sensorCatalog,
+        IApplicationController applicationController,
+        Action closeWindow)
     {
         _settings = settings;
+        _applicationController = applicationController;
 
         var current = settings.Current;
 
@@ -174,6 +181,7 @@ public sealed class SettingsViewModel : ObservableObject
         _widgetMinimumColumnWidthWithRam = current.WidgetMinimumColumnWidthWithRam;
         _widgetMinimumColumnWidthText = FormatNumber(current.WidgetMinimumColumnWidth);
         _widgetMinimumColumnWidthWithRamText = FormatNumber(current.WidgetMinimumColumnWidthWithRam);
+        _showWidget = current.ShowWidget;
 
         // Read from the scheduled task rather than from settings.json: the task is the actual
         // state, so if it was removed outside the app the checkbox still tells the truth.
@@ -324,6 +332,27 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     // ------------------------------------------------------- live (no Save)
+
+    public bool ShowWidget
+    {
+        get => _showWidget;
+        set
+        {
+            if (!SetProperty(ref _showWidget, value))
+            {
+                return;
+            }
+
+            if (value)
+            {
+                _applicationController.ShowWidget();
+            }
+            else
+            {
+                _applicationController.HideWidget();
+            }
+        }
+    }
 
     public string WidgetAppearance
     {

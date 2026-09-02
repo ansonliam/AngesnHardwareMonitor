@@ -10,8 +10,8 @@ using Microsoft.Win32;
 namespace AngesnHardwareWidget;
 
 /// <summary>
-/// Composition root. Builds the one long-lived monitor service, settings store and background
-/// scheduler, then wires them to the widget and tray icon.
+/// Composition root. Builds the long-lived monitor service, settings store, view model and
+/// background scheduler, then creates the widget Window only while the user wants it visible.
 /// </summary>
 public partial class App : Application, IApplicationController
 {
@@ -27,6 +27,8 @@ public partial class App : Application, IApplicationController
     private WheaHardwareErrorMonitor? _wheaMonitor;
     private DispatcherTimer? _hardwareAlertTimer;
     private bool _exiting;
+
+    public bool IsExiting => _exiting;
 
     protected override void OnStartup(StartupEventArgs eventArgs)
     {
@@ -72,7 +74,6 @@ public partial class App : Application, IApplicationController
 
         _scheduler = new HardwareMonitorScheduler(_monitor, _settings);
 
-        _widget = new MainWindow(_settings);
         _mainViewModel = new MainViewModel(
             _settings,
             _monitor.GetSensorCatalog(),
@@ -80,9 +81,11 @@ public partial class App : Application, IApplicationController
             ShowSettings,
             RefreshNow,
             ExitApplication);
-        _widget.DataContext = _mainViewModel;
-        MainWindow = _widget;
-        _widget.Show();
+
+        if (_settings.Current.ShowWidget)
+        {
+            ShowWidgetCore(persistVisibility: false);
+        }
 
         _wheaMonitor = new WheaHardwareErrorMonitor();
         _hardwareAlertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
@@ -111,6 +114,10 @@ public partial class App : Application, IApplicationController
 
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _hardwareAlertTimer?.Stop();
+        if (_settings is not null)
+        {
+            _settings.SettingsChanged -= OnSettingsChanged;
+        }
 
         if (_scheduler is not null)
         {
@@ -127,20 +134,14 @@ public partial class App : Application, IApplicationController
 
     // ------------------------------------------------- IApplicationController
 
-    public bool IsWidgetVisible() => _widget?.IsVisible ?? false;
+    public bool IsWidgetVisible() => Dispatcher.Invoke(() => _widget?.IsVisible == true);
 
     public void ShowWidget() => Dispatcher.BeginInvoke(() =>
     {
-        if (_widget is null)
-        {
-            return;
-        }
-
-        _widget.Show();
-        _widget.Activate();
+        ShowWidgetCore(persistVisibility: true);
     });
 
-    public void HideWidget() => Dispatcher.BeginInvoke(() => _widget?.Hide());
+    public void HideWidget() => Dispatcher.BeginInvoke(HideWidgetCore);
 
     public void RefreshNow() => _scheduler?.RequestImmediateRead();
 
@@ -159,7 +160,7 @@ public partial class App : Application, IApplicationController
 
         var sensorCatalog = _monitor?.GetSensorCatalog()
             ?? new HardwareSensorCatalog([], []);
-        _settingsWindow = new SettingsWindow(_settings, sensorCatalog);
+        _settingsWindow = new SettingsWindow(_settings, sensorCatalog, this);
 
         // Only own the settings window while the widget is actually on screen: an owner that is
         // hidden would take the dialog with it.
@@ -182,6 +183,94 @@ public partial class App : Application, IApplicationController
         _exiting = true;
         Shutdown();
     });
+
+    private void ShowWidgetCore(bool persistVisibility)
+    {
+        if (_settings is null || _mainViewModel is null)
+        {
+            return;
+        }
+
+        if (persistVisibility)
+        {
+            SetWidgetVisibility(true);
+        }
+
+        if (_widget is null)
+        {
+            _widget = new MainWindow(_settings, this)
+            {
+                DataContext = _mainViewModel,
+            };
+            _widget.Closed += OnWidgetClosed;
+            MainWindow = _widget;
+        }
+
+        _widget.Show();
+        _widget.Activate();
+    }
+
+    private void HideWidgetCore()
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        if (_widget is not null)
+        {
+            // WPF closes owned windows with their owner. Settings must stay usable after its
+            // checkbox releases the widget, so remove that ownership first.
+            foreach (Window window in Windows)
+            {
+                if (ReferenceEquals(window.Owner, _widget))
+                {
+                    window.Owner = null;
+                }
+            }
+
+            _widget.CloseForHide();
+        }
+
+        SetWidgetVisibility(false);
+    }
+
+    private void OnWidgetClosed(object? sender, EventArgs eventArgs)
+    {
+        if (sender is not MainWindow window)
+        {
+            return;
+        }
+
+        window.Closed -= OnWidgetClosed;
+        if (!ReferenceEquals(_widget, window))
+        {
+            return;
+        }
+
+        _widget = null;
+        if (ReferenceEquals(MainWindow, window))
+        {
+            MainWindow = null;
+        }
+    }
+
+    private void SetWidgetVisibility(bool isVisible)
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        var updated = _settings.Current;
+        if (updated.ShowWidget == isVisible)
+        {
+            return;
+        }
+
+        updated.ShowWidget = isVisible;
+        _settings.Save(updated);
+    }
 
     // ------------------------------------------------------------------ wiring
 

@@ -108,6 +108,15 @@
 
                 <CheckBox
                     Margin="0,4,0,0"
+                    Content="Show main widget"
+                    IsChecked="{Binding ShowWidget}" />
+                <TextBlock
+                    Margin="0,4,0,10"
+                    Style="{StaticResource HintText}"
+                    Text="Closing the main widget releases its window and visuals. Hardware monitoring, alerts and the tray icon keep running." />
+
+                <CheckBox
+                    Margin="0,4,0,0"
                     Content="Start with Windows"
                     IsChecked="{Binding StartWithWindows}" />
                 <TextBlock
