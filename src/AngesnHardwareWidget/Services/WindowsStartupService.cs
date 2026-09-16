@@ -17,8 +17,8 @@ namespace AngesnHardwareWidget.Services;
 /// answers the "stop asking me for UAC every time" problem: a task started this way is elevated
 /// with no consent dialog. Launching the widget through the task is therefore the prompt-free route.
 ///
-/// It does NOT bypass anything else. Defender, the vulnerable-driver blocklist and SmartScreen all
-/// still apply, so this has no bearing on whether WinRing0 loads and CPU temperature reads.
+/// It does NOT bypass anything else. Defender, driver policy and SmartScreen all still apply, so
+/// this has no bearing on whether the required sensor driver loads and CPU temperature reads.
 ///
 /// The task is the single source of truth for whether startup is enabled -- there is no mirrored
 /// flag in settings.json, so the two cannot disagree after someone edits the task directly.
